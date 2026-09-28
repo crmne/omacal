@@ -405,6 +405,10 @@ Item {
       }
 
       ButtonGroup {
+        // Transparent at rest, not the theme background: the hover fill is a
+        // translucent tint, and fading to it from an opaque color flashes bright
+        // halfway through before settling.
+        background: "transparent"
         anchors.verticalCenter: parent.verticalCenter
         focusable: false
         options: [

@@ -56,8 +56,41 @@ FocusScope {
     save("hiddenCalendars", names.join(", "))
   }
 
+  // The view takes the keyboard, but no row does until Tab moves into
+  // one: a row with keyboard focus marks its cursor chip the way hover
+  // does, and a chip lit before anyone asked reads as a stuck selection.
   function focusFirst() {
-    Qt.callLater(function() { barEventGroup.forceActiveFocus() })
+    Qt.callLater(function() { root.forceActiveFocus() })
+  }
+
+  // What each choice does, said plainly under its row. The row describes
+  // the chip under the pointer, or the chosen one.
+  readonly property var barEventOptions: [
+    { value: "soon", label: "Name + time",
+      help: "Shows the event's name and when it starts, like “Omarchy Podcast · in 12m”, from its earliest HEY alert until it ends." },
+    { value: "time", label: "Time only",
+      help: "Shows only when the event starts, like “in 12m”, without its name. Same timing as Name + time." },
+    { value: "next", label: "Next event",
+      help: "Always shows today's next event, all day long, like “Dinner · at 18:30”. Events inside their alert come first." },
+    { value: "off", label: "Off",
+      help: "Shows only the clock. A calendar icon appears in front of it while an event is coming up, and hovering the clock names it." }
+  ]
+
+  readonly property var leadOptions: [
+    { value: "0", label: "Never", help: "Events with no alert never appear in the bar. Only events with a HEY alert do, from that alert." },
+    { value: "5", label: "5 min", help: "Events with no alert appear in the bar 5 minutes before they start." },
+    { value: "15", label: "15 min", help: "Events with no alert appear in the bar 15 minutes before they start." },
+    { value: "30", label: "30 min", help: "Events with no alert appear in the bar 30 minutes before they start." },
+    { value: "60", label: "1 h", help: "Events with no alert appear in the bar an hour before they start." }
+  ]
+
+  property int barEventHover: -1
+  property int leadHover: -1
+
+  function helpFor(options, hovered, current) {
+    if (hovered >= 0 && hovered < options.length) return options[hovered].help
+    for (var i = 0; i < options.length; i++) if (options[i].value === current) return options[i].help
+    return ""
   }
 
   implicitHeight: settingsColumn.implicitHeight
@@ -121,43 +154,50 @@ FocusScope {
 
     ButtonGroup {
       id: barEventGroup
-      options: [
-        { value: "soon", label: "Name", tooltip: "Name and when: Podcast · in 12m" },
-        { value: "time", label: "Time only", tooltip: "Only when: in 12m" },
-        { value: "next", label: "Always next", tooltip: "Today's next event, all day" },
-        { value: "off", label: "Off", tooltip: "Just the calendar glyph" }
-      ]
+      // Transparent at rest, not the theme background: the hover fill is a
+      // translucent tint, and fading to it from an opaque color flashes bright
+      // halfway through before settling.
+      background: "transparent"
+      options: root.barEventOptions
       value: String(root.value("barEvent", "soon"))
       foreground: root.foreground
       fontFamily: root.fontFamily
       fontSize: Style.font.bodySmall
       onChanged: function(v) { root.save("barEvent", v) }
+      onHovered: function(index, isHovered) { root.barEventHover = isHovered ? index : -1 }
     }
 
     Note {
-      text: "Shown from each event's earliest HEY reminder until it ends."
+      text: root.helpFor(root.barEventOptions, root.barEventHover, String(root.value("barEvent", "soon")))
     }
 
-    Label { text: "WITHOUT A REMINDER, SHOW IT" }
+    Label { text: "EVENTS WITH NO ALERT APPEAR BEFORE THEY START" }
 
     ButtonGroup {
-      options: [
-        { value: "0", label: "Never" },
-        { value: "5", label: "5 min" },
-        { value: "15", label: "15 min" },
-        { value: "30", label: "30 min" },
-        { value: "60", label: "1 h" }
-      ]
+      // Transparent at rest, not the theme background: the hover fill is a
+      // translucent tint, and fading to it from an opaque color flashes bright
+      // halfway through before settling.
+      background: "transparent"
+      options: root.leadOptions
       value: String(Hey.normalizedAlertLead(root.value("alertLeadMinutes", 15)))
       foreground: root.foreground
       fontFamily: root.fontFamily
       fontSize: Style.font.bodySmall
       onChanged: function(v) { root.save("alertLeadMinutes", parseInt(v, 10)) }
+      onHovered: function(index, isHovered) { root.leadHover = isHovered ? index : -1 }
+    }
+
+    Note {
+      text: root.helpFor(root.leadOptions, root.leadHover, String(Hey.normalizedAlertLead(root.value("alertLeadMinutes", 15))))
     }
 
     Label { text: "TIMES" }
 
     ButtonGroup {
+      // Transparent at rest, not the theme background: the hover fill is a
+      // translucent tint, and fading to it from an opaque color flashes bright
+      // halfway through before settling.
+      background: "transparent"
       options: [
         { value: "auto", label: "Like the system" },
         { value: "24", label: "24 h" },

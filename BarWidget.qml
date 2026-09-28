@@ -386,6 +386,12 @@ BarWidget {
     if (panelLoader.item) panelLoader.item.newEvent()
   }
 
+  function openSettings() {
+    if (!panelLoader.item) return
+    if (!panelLoader.item.opened) panelLoader.item.open()
+    panelLoader.item.openSettings()
+  }
+
   // The clock fills more slot than it paints a mark for, at both
   // orientations: horizontally it is a text label in a padded slot, so the
   // dot takes the label width; vertically it is a stack of icon-sized lines,
@@ -591,6 +597,7 @@ BarWidget {
     function hide(): void { root.close() }
     function toggle(): void { root.togglePanel() }
     function newEvent(): void { root.newEvent() }
+    function settings(): void { root.openSettings() }
   }
 
   WidgetButton {

@@ -145,7 +145,8 @@ omarchy plugin validate .
 Plugin code under `~/.config/omarchy/plugins` hot-reloads on save, but not
 through a symlink: when developing from a linked checkout, load changes with
 `omarchy-restart-shell`. `omarchy-shell shell toggle crmne.hey-calendar`
-opens the quick-add card; `omarchy-shell crmne.hey-calendar open` the panel.
+opens the quick-add card; `omarchy-shell crmne.hey-calendar open` the panel,
+and `omarchy-shell crmne.hey-calendar settings` the panel's settings.
 
 `Model.js` is Omarchy's and stays stock; `Hey.js` holds the HEY data, date
 math and command lines and runs under plain node.
