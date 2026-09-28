@@ -195,7 +195,7 @@ Panel {
 
   readonly property int cellWidth: Style.space(52)
   // Taller than stock by the chip row under each number.
-  readonly property int cellHeight: Style.space(48)
+  readonly property int cellHeight: Style.space(44)
   readonly property int cellSpacing: Style.space(2)
   readonly property int weekColumnWidth: Style.space(32)
   readonly property int gutterWidth: Style.space(14)
@@ -825,7 +825,7 @@ Panel {
                       Row {
                         anchors.horizontalCenter: parent.horizontalCenter
                         anchors.bottom: parent.bottom
-                        anchors.bottomMargin: Style.space(5)
+                        anchors.bottomMargin: Style.space(6)
                         spacing: Style.space(2)
                         opacity: modelData.inMonth ? 1 : 0.4
 
@@ -834,8 +834,10 @@ Panel {
 
                           Rectangle {
                             required property var modelData
-                            height: Style.space(14)
-                            width: Math.max(height, chipText.implicitWidth + Style.space(6))
+                            // Kept small on purpose: the date is what the grid
+                            // is for, and the chips only answer "how busy?".
+                            height: Style.space(10)
+                            width: Math.max(height + Style.space(2), chipText.implicitWidth + Style.space(5))
                             radius: Math.max(3, Math.round(height / 3.5))
                             color: modelData.overflow
                               ? Qt.rgba(root.contentForeground.r, root.contentForeground.g, root.contentForeground.b, 0.28)
@@ -848,7 +850,7 @@ Panel {
                               text: modelData.overflow ? "+" + modelData.count : modelData.count
                               color: modelData.overflow ? root.contentForeground : Hey.calendarInk
                               font.family: root.contentFontFamily
-                              font.pixelSize: Math.max(8, Style.font.caption - 1)
+                              font.pixelSize: Math.max(7, Style.font.caption - 3)
                               font.bold: true
                             }
                           }
