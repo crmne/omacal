@@ -1005,8 +1005,8 @@ function barEvents(events, nowMs, leadMinutes) {
 }
 
 // Which events the bar names, by the `barEvent` setting: "soon" (the
-// default) those inside their alert windows, "next" the next one left today
-// all day, "off" none.
+// default) those inside their alert windows, "time" the same without their
+// titles, "next" the next one left today all day, "off" none.
 function barSelection(mode, events, todayEvents, nowMs, leadMinutes) {
   if (mode === "off") return []
   if (mode === "next") {
@@ -1018,10 +1018,13 @@ function barSelection(mode, events, todayEvents, nowMs, leadMinutes) {
   return barEvents(events, nowMs, leadMinutes)
 }
 
-// The first event and how many more: "Podcast · in 12m  +1".
-function barLabel(selection, nowMs, hour24) {
+// The first event and how many more: "Podcast · in 12m  +1". With
+// `withoutTitle` (the "time" mode) only when: "in 12m  +1".
+function barLabel(selection, nowMs, hour24, withoutTitle) {
   if (!selection || selection.length === 0) return ""
-  var label = barEventLabel(selection[0], nowMs, hour24)
+  var label = withoutTitle
+    ? (barWhen(selection[0], nowMs, hour24) || "today")
+    : barEventLabel(selection[0], nowMs, hour24)
   return selection.length > 1 ? label + "  +" + (selection.length - 1) : label
 }
 

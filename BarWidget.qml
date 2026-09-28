@@ -44,7 +44,7 @@ BarWidget {
   // until it ends), most pressing first; the bar names the first and counts
   // the rest.
   readonly property var shownEvents: Hey.barSelection(barEventMode, events, todayEvents, displayDate.getTime(), alertLeadMinutes)
-  readonly property string eventText: Hey.barLabel(shownEvents, displayDate.getTime(), hour24)
+  readonly property string eventText: Hey.barLabel(shownEvents, displayDate.getTime(), hour24, barEventMode === "time")
   readonly property string displayText: eventText !== ""
     ? calendarGlyph + " " + eventText + "   " + dateText
     : (alerting ? calendarGlyph + "  " + dateText : dateText)

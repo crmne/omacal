@@ -216,6 +216,13 @@ test("overlaps: about to start beats under way beats coming beats all day", func
   assert.strictEqual(afterStandup[0].title, "Meeting")
 })
 
+test("time mode drops the title and keeps the when", function() {
+  var e = timed(1, "Secret meeting", 2026, 9, 28, 13, 0, 30)
+  var now = e.startMs - 12 * 60000
+  var pick = Hey.barSelection("time", [e], [e], now, 15)
+  assert.strictEqual(Hey.barLabel(pick, now, true, true), "in 12m")
+})
+
 test("next mode falls back to today's next event", function() {
   var e = timed(1, "Dinner", 2026, 9, 28, 18, 30, 60)
   var now = e.startMs - 3 * 3600000
