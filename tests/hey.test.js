@@ -220,7 +220,15 @@ test("time mode drops the title and keeps the when", function() {
   var e = timed(1, "Secret meeting", 2026, 9, 28, 13, 0, 30)
   var now = e.startMs - 12 * 60000
   var pick = Hey.barSelection("time", [e], [e], now, 15)
-  assert.strictEqual(Hey.barLabel(pick, now, true, true), "in 12m")
+  assert.strictEqual(Hey.barLabel(pick, now, true, "time"), "in 12m")
+})
+
+test("name mode keeps the title and drops the when", function() {
+  var a = timed(1, "Standup", 2026, 9, 28, 13, 0, 15)
+  var b = timed(2, "Lunch", 2026, 9, 28, 13, 5, 60)
+  var now = a.startMs - 5 * 60000
+  var pick = Hey.barSelection("name", [a, b], [a, b], now, 15)
+  assert.strictEqual(Hey.barLabel(pick, now, true, "name"), "Standup  +1")
 })
 
 test("next mode falls back to today's next event", function() {

@@ -44,12 +44,13 @@
         "label": "Event in the bar",
         "options": [
           "soon",
+          "name",
           "time",
           "next",
           "off"
         ],
         "defaultValue": "soon",
-        "description": "\"soon\" names an event in front of the clock from its earliest reminder until it ends. \"time\" shows only when (\"in 12m\"), without the title. \"next\" always names today's next event. \"off\" shows only the calendar glyph."
+        "description": "\"soon\" shows an event's name and when, from its earliest reminder until it ends. \"name\" and \"time\" show only one of the two. \"next\" always shows today's next event. \"off\" shows only the calendar glyph."
       },
       {
         "key": "notifications",

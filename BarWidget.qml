@@ -44,7 +44,7 @@ BarWidget {
   // until it ends), most pressing first; the bar names the first and counts
   // the rest.
   readonly property var shownEvents: Hey.barSelection(barEventMode, events, todayEvents, displayDate.getTime(), alertLeadMinutes)
-  readonly property string eventText: Hey.barLabel(shownEvents, displayDate.getTime(), hour24, barEventMode === "time")
+  readonly property string eventText: Hey.barLabel(shownEvents, displayDate.getTime(), hour24, barEventMode)
   readonly property string displayText: eventText !== ""
     ? calendarGlyph + " " + eventText + "   " + dateText
     : (alerting ? calendarGlyph + "  " + dateText : dateText)
@@ -388,8 +388,15 @@ BarWidget {
 
   function openSettings() {
     if (!panelLoader.item) return
-    if (!panelLoader.item.opened) panelLoader.item.open()
-    panelLoader.item.openSettings()
+    var panel = panelLoader.item
+    if (panel.opened) {
+      panel.openSettings()
+      return
+    }
+    // Opening hands the popout over, which closes whatever was open and
+    // resets this panel's view on the way; the switch has to come after.
+    panel.open()
+    Qt.callLater(function() { if (panel.opened) panel.openSettings() })
   }
 
   // The clock fills more slot than it paints a mark for, at both

@@ -117,7 +117,7 @@ at once, so it can be edited there too.
 
 | Key | Default | Meaning |
 | --- | --- | --- |
-| `barEvent` | `soon` | `soon`: name an event in the bar from its earliest reminder until it ends. `time`: the same, but only when (`in 12m`), no title. `next`: always name today's next event. `off`: the glyph only. |
+| `barEvent` | `soon` | `soon`: name an event in the bar from its earliest reminder until it ends. `name`: the same, but only the title. `time`: the same, but only when (`in 12m`). `next`: always name today's next event. `off`: the glyph only. |
 | `notifications` | `true` | Show HEY reminders as notifications. |
 | `quickAddShortcut` | `ALT + SHIFT + SPACE` | Opens the quick-add card. Empty turns it off. |
 | `alertLeadMinutes` | `15` | How early the bar names an event that has no reminders, and what counts as "about to start". |

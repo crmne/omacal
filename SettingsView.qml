@@ -68,10 +68,12 @@ FocusScope {
   readonly property var barEventOptions: [
     { value: "soon", label: "Name + time",
       help: "Shows the event's name and when it starts, like “Omarchy Podcast · in 12m”, from its earliest HEY alert until it ends." },
-    { value: "time", label: "Time only",
-      help: "Shows only when the event starts, like “in 12m”, without its name. Same timing as Name + time." },
-    { value: "next", label: "Next event",
-      help: "Always shows today's next event, all day long, like “Dinner · at 18:30”. Events inside their alert come first." },
+    { value: "name", label: "Name",
+      help: "Shows only the event's name, like “Omarchy Podcast”, from its earliest HEY alert until it ends." },
+    { value: "time", label: "Time",
+      help: "Shows only when the event starts, like “in 12m”, without its name, from its earliest HEY alert until it ends." },
+    { value: "next", label: "Next",
+      help: "Always shows today's next event with its time, all day long, like “Dinner · at 18:30”. Events inside their alert come first." },
     { value: "off", label: "Off",
       help: "Shows only the clock. A calendar icon appears in front of it while an event is coming up, and hovering the clock names it." }
   ]
