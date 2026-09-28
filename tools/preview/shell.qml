@@ -273,6 +273,11 @@ ShellRoot {
       var cardItem = popup ? popup.contentItem[0] : null
       while (cardItem && cardItem.borderSpec === undefined) cardItem = cardItem.parent
       if (phase === 1) panel.open()
+      // Waits for the popup to map and lay out before grabbing it.
+      if ((phase === 3 || phase === 6) && (!cardItem || cardItem.height < 100)) {
+        phase--
+        return
+      }
       if (phase === 3) shell.save(cardItem, "panel-full.png")
       if (phase === 4) panel.openSettings()
       if (phase === 6) shell.save(cardItem, "settings-full.png")
@@ -283,11 +288,11 @@ ShellRoot {
         form.reset()
       }
       if (phase === 8) {
-        form.title = "Coffee with Alex"
-        form.dayText = "tomorrow"
-        form.startText = "10:00"
-        form.endText = "11:00"
-        form.locationText = "Café Luna"
+        form.titleInput = "Coffee with Alex"
+        form.dayInput = "tomorrow"
+        form.startInput = "10:00"
+        form.endInput = "11:00"
+        form.locationInput = "Café Luna"
         form.calendarId = 3
       }
       if (phase === 9) shell.save(card, "quick-add.png")

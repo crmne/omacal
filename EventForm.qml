@@ -41,11 +41,14 @@ Item {
   signal submitted(var form)
   signal canceled()
 
-  property alias title: titleField.text
-  property alias dayText: dateField.text
-  property alias startText: startField.text
-  property alias endText: endField.text
-  property alias locationText: locationField.text
+  // The fields' text, for filling the form from outside (the screenshot
+  // harness). Named apart from the functions below: an alias that shares a
+  // function's name shadows it.
+  property alias titleInput: titleField.text
+  property alias dayInput: dateField.text
+  property alias startInput: startField.text
+  property alias endInput: endField.text
+  property alias locationInput: locationField.text
   property int calendarId: 0
   property bool allDay: false
   property string remind: "30m"
