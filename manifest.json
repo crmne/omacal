@@ -5,12 +5,16 @@
   "version": "0.1.0",
   "author": "Carmine Paolino",
   "license": "MIT",
-  "description": "Omarchy's stock clock and calendar with HEY Calendar laid over it: per-calendar event chips on the month grid, a HEY-style day view, new events, reminders as notifications, and time tracking.",
+  "description": "Omarchy's stock clock and calendar with HEY Calendar laid over it: per-calendar event chips on the month grid, a HEY-style day view, new events from the panel or a quick-add shortcut, reminders as notifications, and time tracking.",
   "kinds": [
-    "bar-widget"
+    "service",
+    "bar-widget",
+    "overlay"
   ],
   "entryPoints": {
-    "barWidget": "BarWidget.qml"
+    "service": "Service.qml",
+    "barWidget": "BarWidget.qml",
+    "overlay": "QuickAdd.qml"
   },
   "barWidget": {
     "displayName": "HEY Calendar",
@@ -29,7 +33,8 @@
       "notifications": true,
       "liveSync": true,
       "timeFormat": "auto",
-      "refreshIntervalSec": 300
+      "refreshIntervalSec": 300,
+      "quickAddShortcut": "ALT + SHIFT + SPACE"
     },
     "schema": [
       {
@@ -38,6 +43,13 @@
         "label": "Show HEY reminders as notifications",
         "defaultValue": true,
         "description": "Uses the reminders set on each event in HEY."
+      },
+      {
+        "key": "quickAddShortcut",
+        "type": "string",
+        "label": "Quick add shortcut",
+        "defaultValue": "ALT + SHIFT + SPACE",
+        "description": "Opens the new-event card from anywhere. Leave empty to turn it off. A shortcut already in use is not taken."
       },
       {
         "key": "alertLeadMinutes",
@@ -53,7 +65,11 @@
         "key": "timeFormat",
         "type": "enum",
         "label": "Event times",
-        "options": ["auto", "12", "24"],
+        "options": [
+          "auto",
+          "12",
+          "24"
+        ],
         "defaultValue": "auto",
         "description": "\"auto\" follows the system locale."
       },

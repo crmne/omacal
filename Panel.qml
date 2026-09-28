@@ -139,7 +139,17 @@ Panel {
   function submitEvent(form) {
     if (!root.hostWidget) return
     if (Number(form.calendarId) > 0) persistSettings({ lastCalendarId: Number(form.calendarId) })
-    root.hostWidget.addEvent(form)
+    if (root.hostWidget.addEvent(form)) root.selectDayKeepingForm(form.date)
+  }
+
+  // The event may be going on a day other than the selected one ("fri"),
+  // and the day view should be showing that day when it lands.
+  function selectDayKeepingForm(key) {
+    if (!Hey.isDayKey(key) || key === root.selectedKey) return
+    root.selectedKey = key
+    var date = Hey.dateFromKey(key)
+    root.viewYear = date.getFullYear()
+    root.viewMonth = date.getMonth()
   }
 
   function openSelectedDay() {
@@ -1051,6 +1061,7 @@ Panel {
                 visible: root.composing
                 width: parent.width
                 dayKey: root.selectedKey
+                todayKey: root.todayKey
                 calendars: root.hostWidget ? root.hostWidget.writableCalendars : []
                 defaultCalendarId: Number(root.setting("lastCalendarId", 0)) || 0
                 busy: !!root.hostWidget && root.hostWidget.writing

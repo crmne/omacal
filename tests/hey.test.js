@@ -203,6 +203,25 @@ test("clock input is forgiving", function() {
   assert.strictEqual(Hey.parseClock("soon"), "")
 })
 
+test("day input is forgiving, relative to today (a Monday)", function() {
+  var today = "2026-09-28"
+  assert.strictEqual(Hey.parseDay("", today), today)
+  assert.strictEqual(Hey.parseDay("tomorrow", today), "2026-09-29")
+  assert.strictEqual(Hey.parseDay("fri", today), "2026-10-02")
+  assert.strictEqual(Hey.parseDay("mon", today), today)
+  assert.strictEqual(Hey.parseDay("next mon", today), "2026-10-05")
+  assert.strictEqual(Hey.parseDay("in 3 days", today), "2026-10-01")
+  assert.strictEqual(Hey.parseDay("+2w", today), "2026-10-12")
+  assert.strictEqual(Hey.parseDay("3 oct", today), "2026-10-03")
+  assert.strictEqual(Hey.parseDay("Oct 3rd", today), "2026-10-03")
+  assert.strictEqual(Hey.parseDay("3", today), "2026-10-03")
+  assert.strictEqual(Hey.parseDay("30", today), "2026-09-30")
+  assert.strictEqual(Hey.parseDay("1 jan", today), "2027-01-01")
+  assert.strictEqual(Hey.parseDay("2026-12-24", today), "2026-12-24")
+  assert.strictEqual(Hey.parseDay("31 feb", today), "")
+  assert.strictEqual(Hey.parseDay("someday", today), "")
+})
+
 test("the add command is an argv, with every field in its own argument", function() {
   var built = Hey.addEventCommand({ title: "Dinner; rm -rf ~", date: "2026-09-28", startTime: "7pm", endTime: "22:00",
     calendarId: 383706, location: "Aedes", remind: "30m" })

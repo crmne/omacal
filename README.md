@@ -12,9 +12,14 @@ Omarchy's stock clock and calendar, exactly as it ships, with your
   calendar and location. The event under way is ringed and marked `NOW`.
   Clicking an event opens its meeting link, or the event in HEY.
 - **New events.** `+`, `N`, or double-clicking a day opens a quick form:
-  title, calendar, all-day or a time range, place, reminder. Times are typed
-  loosely (`9`, `930`, `9:30pm`, `21.30`); an end before the start means the
-  next morning.
+  title, day, calendar, all-day or a time range, place, reminder. Days and
+  times are typed loosely: `fri`, `tomorrow`, `next mon`, `3 oct` for the
+  day, `9`, `930`, `9:30pm`, `21.30` for times. An end before the start
+  means the next morning.
+- **Quick add from anywhere.** **Alt+Shift+Space** opens the same form as a
+  card in the middle of the screen, like OmaTasks' quick add. The shortcut
+  is bound in Hyprland by the plugin, never over one that is already taken,
+  and released when the plugin unloads.
 - **Delete** a one-off event from its hover button (with a confirmation).
   Repeating events are left to HEY, since deleting by id takes the series.
 - **Notifications.** The reminders you set in HEY arrive as desktop
@@ -75,6 +80,7 @@ The stock ones all work: arrows, `[` `]` months, `{` `}` years, `T` today,
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `notifications` | `true` | Show HEY reminders as notifications. |
+| `quickAddShortcut` | `ALT + SHIFT + SPACE` | Opens the quick-add card. Empty turns it off. |
 | `alertLeadMinutes` | `15` | When the bar glyph appears. `0` turns it off. |
 | `timeFormat` | `auto` | `auto`, `12` or `24`. |
 | `liveSync` | `true` | Keep a `hey watch` running for instant updates. |
@@ -96,6 +102,11 @@ hey-cli, so they are not here yet. Day titles are in HEY's API
 tests/run                  # Hey.js, in five timezones
 omarchy plugin validate .
 ```
+
+Plugin code under `~/.config/omarchy/plugins` hot-reloads on save, but not
+through a symlink: when developing from a linked checkout, load changes with
+`omarchy-restart-shell`. `omarchy-shell shell toggle crmne.hey-calendar`
+opens the quick-add card; `omarchy-shell crmne.hey-calendar open` the panel.
 
 `Model.js` is Omarchy's and stays stock; `Hey.js` holds the HEY data, date
 math and command lines and runs under plain node.

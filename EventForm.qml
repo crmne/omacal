@@ -3,11 +3,13 @@ import qs.Commons
 import qs.Ui
 import "Hey.js" as Hey
 
-// A new event on the selected day, the fields HEY's own quick form asks
-// for: a title, which calendar, when, where, and a reminder.
+// A new event, with the fields HEY's own quick form asks for: a title,
+// which calendar, which day, when, where, and a reminder. The calendar
+// panel's + button and the Alt+Shift+Space quick-add card are both this.
 //
-// Times are typed, not picked: "9", "930", "9:30pm" and "21.30" all work,
-// and an end earlier than the start is read as the next morning. The event
+// Days and times are typed, not picked: "fri", "tomorrow", "3 oct" for the
+// day; "9", "930", "9:30pm", "21.30" for times. An end earlier than the
+// start is read as the next morning. The event
 // is created through `hey event add`, so HEY applies its own defaults to
 // anything left blank.
 //
@@ -15,11 +17,18 @@ import "Hey.js" as Hey
 Item {
   id: root
 
+  // The day the form starts on. The panel passes its selected day; the
+  // quick-add card leaves it to today.
   property string dayKey: ""
+  property string todayKey: ""
+  readonly property string resolvedDay: Hey.parseDay(dateField.text, todayKey !== "" ? todayKey : Hey.keyForDate(new Date()))
   property var calendars: []
   property int defaultCalendarId: 0
   property bool busy: false
+  // `error` comes from whoever runs the command; `localError` is the form's
+  // own complaint about what was typed, and wins while it stands.
   property string error: ""
+  property string localError: ""
   property color foreground: Color.foreground
   property color accent: Color.accent
   property string fontFamily: Style.font.family
@@ -31,8 +40,8 @@ Item {
   property bool allDay: false
   property string remind: "30m"
 
-  readonly property string dayLabel: Hey.isDayKey(dayKey)
-    ? Qt.formatDate(Hey.dateFromKey(dayKey), "ddd d MMMM").toUpperCase()
+  readonly property string dayLabel: Hey.isDayKey(resolvedDay)
+    ? Qt.formatDate(Hey.dateFromKey(resolvedDay), "dddd d MMMM yyyy")
     : ""
 
   implicitHeight: formColumn.implicitHeight
@@ -42,12 +51,15 @@ Item {
   function reset() {
     titleField.text = ""
     locationField.text = ""
-    var start = Hey.suggestedStart(root.dayKey, new Date())
+    var today = root.todayKey !== "" ? root.todayKey : Hey.keyForDate(new Date())
+    var day = Hey.isDayKey(root.dayKey) ? root.dayKey : today
+    dateField.text = day === today ? "today" : (day === Hey.addDays(today, 1) ? "tomorrow" : Qt.formatDate(Hey.dateFromKey(day), "d MMM yyyy"))
+    var start = Hey.suggestedStart(day, new Date())
     startField.text = start
     endField.text = ""
     root.allDay = false
     root.remind = "30m"
-    root.error = ""
+    root.localError = ""
     root.calendarId = pickCalendar(root.defaultCalendarId)
     Qt.callLater(function() { titleField.forceActiveFocus() })
   }
@@ -60,9 +72,14 @@ Item {
 
   function submit() {
     if (root.busy) return
+    root.localError = ""
+    if (!Hey.isDayKey(root.resolvedDay)) {
+      root.localError = "“" + dateField.text + "” is not a day I know. Try fri, tomorrow or 3 oct."
+      return
+    }
     root.submitted({
       title: titleField.text,
-      date: root.dayKey,
+      date: root.resolvedDay,
       allDay: root.allDay,
       startTime: startField.text,
       endTime: endField.text,
@@ -97,7 +114,7 @@ Item {
 
     Text {
       textFormat: Text.PlainText
-      text: "NEW EVENT · " + root.dayLabel
+      text: "NEW EVENT"
       color: Qt.darker(root.foreground, 1.5)
       font.family: root.fontFamily
       font.pixelSize: Style.font.bodySmall
@@ -110,7 +127,41 @@ Item {
       placeholderText: "What's happening?"
       foreground: root.foreground
       font.family: root.fontFamily
-      Keys.onPressed: function(event) { root.handleKey(event, root.allDay ? locationField : startField) }
+      Keys.onPressed: function(event) { root.handleKey(event, dateField) }
+    }
+
+    Row {
+      width: parent.width
+      spacing: Style.space(10)
+
+      Text {
+        anchors.verticalCenter: parent.verticalCenter
+        text: "ON"
+        color: Qt.darker(root.foreground, 1.5)
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.bodySmall
+        font.letterSpacing: 1
+      }
+
+      TextField {
+        id: dateField
+        width: Style.space(130)
+        anchors.verticalCenter: parent.verticalCenter
+        placeholderText: "today"
+        foreground: root.foreground
+        font.family: root.fontFamily
+        Keys.onPressed: function(event) { root.handleKey(event, root.allDay ? locationField : startField) }
+      }
+
+      // What the typed day resolves to, so "fri" is never a guess.
+      Text {
+        anchors.verticalCenter: parent.verticalCenter
+        textFormat: Text.PlainText
+        text: root.dayLabel !== "" ? root.dayLabel : "Not a day"
+        color: root.dayLabel !== "" ? Qt.darker(root.foreground, 1.4) : Color.urgent
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.bodySmall
+      }
     }
 
     // Calendars as HEY paints them: a pastel pill each, the chosen one
@@ -266,7 +317,7 @@ Item {
         anchors.right: cancelButton.left
         anchors.rightMargin: Style.space(10)
         anchors.verticalCenter: parent.verticalCenter
-        text: root.busy ? "Adding to HEY…" : root.error
+        text: root.busy ? "Adding to HEY…" : (root.localError !== "" ? root.localError : root.error)
         color: root.busy ? Qt.darker(root.foreground, 1.4) : Color.urgent
         font.family: root.fontFamily
         font.pixelSize: Style.font.bodySmall

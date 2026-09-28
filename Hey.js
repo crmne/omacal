@@ -918,6 +918,79 @@ function parseClock(value) {
   return pad2(hours) + ":" + pad2(minutes)
 }
 
+var WEEKDAYS = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"]
+
+function matchName(word, names, minimum) {
+  if (word.length < minimum) return -1
+  for (var i = 0; i < names.length; i++) if (names[i].indexOf(word) === 0) return i
+  return -1
+}
+
+// Loose day input, relative to today: "today", "tomorrow", "fri" (the next
+// Friday, today included), "next fri" (the one after), "in 3 days", "+3",
+// "3 oct", "oct 3", "3" (the next 3rd), or "2026-10-03". Returns a day key,
+// or "" when it is not a day. Blank means today.
+function parseDay(value, todayKey) {
+  var text = String(value === undefined || value === null ? "" : value)
+    .toLowerCase().replace(/[,.]/g, " ").replace(/\s+/g, " ").replace(/^ | $/g, "")
+  if (!isDayKey(todayKey)) return ""
+  if (text === "" || text === "today" || text === "tod") return todayKey
+  if (text === "tomorrow" || text === "tmr" || text === "tom") return addDays(todayKey, 1)
+  if (text === "yesterday") return addDays(todayKey, -1)
+  if (isDayKey(text)) {
+    var exact = dateFromKey(text)
+    return keyForDate(exact) === text ? text : ""
+  }
+
+  var match = /^(?:in )?\+?(\d{1,3}) ?(d|day|days|w|wk|week|weeks)?$/.exec(text)
+  if (match && (match[2] || /^(in |\+)/.test(text))) {
+    var n = parseInt(match[1], 10)
+    return addDays(todayKey, /^w/.test(match[2] || "") ? n * 7 : n)
+  }
+
+  match = /^(next )?([a-z]+)$/.exec(text)
+  if (match) {
+    var weekday = matchName(match[2], WEEKDAYS, 2)
+    if (weekday !== -1) {
+      var delta = (weekday - dateFromKey(todayKey).getDay() + 7) % 7
+      return addDays(todayKey, delta + (match[1] ? 7 : 0))
+    }
+  }
+
+  var today = dateFromKey(todayKey)
+  var day = -1
+  var month = -1
+  match = /^(\d{1,2})(?:st|nd|rd|th)?(?: ([a-z]+))?(?: (\d{4}))?$/.exec(text)
+  if (match) {
+    day = parseInt(match[1], 10)
+    month = match[2] ? matchName(match[2], MONTH_NAMES, 3) : -2
+    if (match[2] && month === -1) return ""
+  } else {
+    match = /^([a-z]+) (\d{1,2})(?:st|nd|rd|th)?(?: (\d{4}))?$/.exec(text)
+    if (!match) return ""
+    month = matchName(match[1], MONTH_NAMES, 3)
+    day = parseInt(match[2], 10)
+    if (month === -1) return ""
+    match = [match[0], match[2], match[1], match[3]]
+  }
+  var year = match[3] ? parseInt(match[3], 10) : today.getFullYear()
+
+  // A bare day number is the next one to come: "3" on the 28th is the 3rd
+  // of next month. A day and month without a year is the next one too.
+  var candidate
+  if (month === -2) {
+    candidate = new Date(today.getFullYear(), today.getMonth(), day)
+    if (candidate.getDate() !== day || keyForDate(candidate) < todayKey)
+      candidate = new Date(today.getFullYear(), today.getMonth() + 1, day)
+    if (candidate.getDate() !== day) return ""
+    return keyForDate(candidate)
+  }
+  candidate = new Date(year, month, day)
+  if (candidate.getDate() !== day) return ""
+  if (!match[3] && keyForDate(candidate) < todayKey) candidate = new Date(year + 1, month, day)
+  return candidate.getDate() === day ? keyForDate(candidate) : ""
+}
+
 function clockMinutes(hhmm) {
   var parts = String(hhmm).split(":")
   return parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10)
@@ -1150,6 +1223,7 @@ if (typeof module !== "undefined") {
     notificationBody: notificationBody,
     notifyCommand: notifyCommand,
     parseClock: parseClock,
+    parseDay: parseDay,
     suggestedStart: suggestedStart,
     reminderChoices: reminderChoices,
     addEventCommand: addEventCommand,
