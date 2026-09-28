@@ -94,6 +94,13 @@ Panel {
   readonly property bool selectedIsToday: selectedKey === todayKey
   property bool composing: false
   property string deletingKey: ""
+  readonly property var selectedTracks: hostWidget && hostWidget.tracksByDay ? (hostWidget.tracksByDay[selectedKey] || []) : []
+  readonly property bool renamingTrack: !!hostWidget && hostWidget.renameTrackId !== ""
+
+  function finishRenaming() {
+    if (root.hostWidget) root.hostWidget.renameTrackId = ""
+    Qt.callLater(function() { if (keyCatcher) keyCatcher.forceActiveFocus() })
+  }
 
   onWeeksChanged: requestVisibleWeeks()
   onHostWidgetChanged: requestVisibleWeeks()
@@ -380,7 +387,7 @@ Panel {
     PanelKeyCatcher {
       id: keyCatcher
       anchors.fill: parent
-      blocked: root.editingLife || root.composing
+      blocked: root.editingLife || root.composing || root.renamingTrack
       onMoveRequested: function(dx, dy) {
         if (dx !== 0) root.moveMonth(dx)
         if (dy !== 0) root.moveYear(dy)
@@ -1152,6 +1159,47 @@ Panel {
                   color: Color.urgent
                   font.family: root.contentFontFamily
                   font.pixelSize: Style.font.bodySmall
+                }
+              }
+
+              // ---- Time tracked on the day. A track just stopped comes up
+              //      with its name field open.
+              Column {
+                visible: !root.composing && root.selectedTracks.length > 0
+                width: parent.width
+                spacing: Style.space(4)
+
+                Text {
+                  textFormat: Text.PlainText
+                  topPadding: Style.space(4)
+                  text: "TRACKED · " + Hey.durationLabel(Hey.trackedOnDay(root.selectedTracks, root.selectedKey))
+                  color: Qt.darker(root.contentForeground, 1.5)
+                  font.family: root.contentFontFamily
+                  font.pixelSize: Style.font.caption
+                  font.letterSpacing: 1
+                }
+
+                Repeater {
+                  model: root.selectedTracks
+
+                  TimeTrackRow {
+                    required property var modelData
+                    width: parent.width
+                    track: modelData
+                    dayKey: root.selectedKey
+                    hour24: root.hour24
+                    renaming: !!root.hostWidget && root.hostWidget.renameTrackId === modelData.id
+                    busy: !!root.hostWidget && root.hostWidget.writing
+                    foreground: root.contentForeground
+                    fontFamily: root.contentFontFamily
+                    onRenameStarted: if (root.hostWidget) root.hostWidget.renameTrackId = modelData.id
+                    onRenameCanceled: root.finishRenaming()
+                    onRenameRequested: function(name) {
+                      if (root.hostWidget) root.hostWidget.renameTimeTrack(modelData.id, name)
+                      root.finishRenaming()
+                    }
+                    onDeleteRequested: if (root.hostWidget) root.hostWidget.deleteTimeTrack(modelData.id)
+                  }
                 }
               }
 

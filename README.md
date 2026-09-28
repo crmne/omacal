@@ -25,12 +25,21 @@ Omarchy's stock clock and calendar, exactly as it ships, with your
 - **Notifications.** The reminders you set in HEY arrive as desktop
   notifications. Clicking one opens the meeting link or the event.
 - **Time tracking.** Start and stop HEY's time tracker from today's view.
+  Finished tracks show on their day under **Tracked**, with the day's
+  total. Stopping one opens its name field right away; any track can be
+  renamed by clicking it (HEY names a track by its category, created if
+  new) or deleted from its hover button.
 - **Live sync.** A `hey watch` stream refreshes the panel within seconds of
   a change made anywhere else, with polling as the fallback.
-- **In the bar**, like a macOS menu-bar calendar: from 15 minutes before an
-  event until it ends, its name and when sit in front of the stock clock
-  (`󰃭 Omarchy Podcast · in 12m`, then `· until 14:30`). The `barEvent`
-  setting can show today's next event all day instead, or only the glyph.
+- **In the bar**, like a macOS menu-bar calendar: an event's name and when
+  sit in front of the stock clock (`󰃭 Omarchy Podcast · in 12m`, then
+  `· until 14:30`) from its **earliest HEY reminder** until it ends. A day
+  ahead if you asked for a day's notice, 30 minutes if 30. Without
+  reminders it uses `alertLeadMinutes`; all-day events only show when they
+  have a reminder. When several overlap, the bar names one and counts the
+  rest (`+2`), and hovering lists them all. What it names first: something
+  starting within `alertLeadMinutes`, then what is under way (ending
+  soonest first), then what is coming, then all-day events.
 - **Today in HEY's orange**, in the grid as well as the day view, and a
   **Today** button (or `T`) back to it whenever you have moved away.
 
@@ -101,10 +110,10 @@ The stock ones all work: arrows, `[` `]` months, `{` `}` years, `T` today,
 
 | Key | Default | Meaning |
 | --- | --- | --- |
-| `barEvent` | `soon` | `soon`: name an event in the bar from `alertLeadMinutes` before it until it ends. `next`: always name today's next event. `off`: the glyph only. |
+| `barEvent` | `soon` | `soon`: name an event in the bar from its earliest reminder until it ends. `next`: always name today's next event. `off`: the glyph only. |
 | `notifications` | `true` | Show HEY reminders as notifications. |
 | `quickAddShortcut` | `ALT + SHIFT + SPACE` | Opens the quick-add card. Empty turns it off. |
-| `alertLeadMinutes` | `15` | How early the bar names an event. `0` turns it off. |
+| `alertLeadMinutes` | `15` | How early the bar names an event that has no reminders, and what counts as "about to start". |
 | `timeFormat` | `auto` | `auto`, `12` or `24`. |
 | `liveSync` | `true` | Keep a `hey watch` running for instant updates. |
 | `refreshIntervalSec` | `300` | Polling fallback, 30 to 3600. |

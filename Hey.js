@@ -170,6 +170,31 @@ var timeTrackCommand = ["bash", "-c",
 var watchCommand = ["hey", "watch", "--events",
   "recording_added,recording_updated,recording_deleted,calendar_added,calendar_updated,calendar_deleted,calendar_resync"]
 
+// Finished time tracks, newest first. `hey timetrack list` has no date
+// window, so the newest few hundred are read and filed by day here; that
+// covers the weeks anyone browses.
+var timeTracksCommand = ["bash", "-c",
+  "timeout -k 3 20 hey timetrack list --json --limit 300 2>/dev/null"
+  + " | jq -c '[.data[] | {id, title: (.title // \"\"), category: (.category // \"\"),"
+  + " notes: (.notes // \"\"), starts_at: (.starts_at // \"\"), ends_at: (.ends_at // \"\")}]'"
+  + " | head -c 1048576",
+  "hey-calendar"]
+
+// HEY names a track by its category: editing one "files the track under a
+// category title, which HEY creates if it has none by that title".
+function timeTrackRenameCommand(id, name) {
+  var trackId = String(id || "")
+  var title = String(name || "").replace(/^\s+|\s+$/g, "")
+  if (!/^\d+$/.test(trackId) || title === "") return []
+  return ["timeout", "-k", "3", "20", "hey", "timetrack", "edit", trackId, "--category", title.substr(0, 128), "--json"]
+}
+
+function timeTrackDeleteCommand(id) {
+  var trackId = String(id || "")
+  if (!/^\d+$/.test(trackId)) return []
+  return ["timeout", "-k", "3", "20", "hey", "timetrack", "delete", trackId, "--json"]
+}
+
 function timeTrackStartCommand() {
   return ["timeout", "-k", "3", "20", "hey", "timetrack", "start", "--json"]
 }
@@ -361,9 +386,85 @@ function parseTimeTrack(raw) {
   if (startMs === null) return null
   return {
     id: boundedString(data.id, 32),
-    title: boundedString(data.title, 256),
+    title: boundedString(data.category, 128) || boundedString(data.title, 256),
     startMs: startMs
   }
+}
+
+// A finished track, shaped enough like a timed event that the same day
+// math files it: the days it covers, where it starts and ends.
+function normalizeTimeTrack(raw) {
+  if (!raw || typeof raw !== "object") return null
+  var startMs = parseInstant(raw.starts_at)
+  var endMs = parseInstant(raw.ends_at)
+  if (startMs === null) return null
+  var category = boundedString(raw.category, 128)
+  var title = boundedString(raw.title, 256)
+  return {
+    key: "track:" + boundedString(raw.id, 32),
+    id: boundedString(raw.id, 32),
+    category: category,
+    // "Time Track" is what HEY calls one nobody named.
+    name: category || title || "Time Track",
+    named: category !== "",
+    notes: boundedString(raw.notes, 1024),
+    allDay: false,
+    startMs: startMs,
+    endMs: endMs === null || endMs < startMs ? startMs : endMs
+  }
+}
+
+function parseTimeTracks(raw) {
+  var text = String(raw === undefined || raw === null ? "" : raw).replace(/^\s+|\s+$/g, "")
+  if (text === "") return null
+  var parsed
+  try {
+    parsed = JSON.parse(text)
+  } catch (e) {
+    return null
+  }
+  if (!Array.isArray(parsed)) return null
+  var tracks = []
+  for (var i = 0; i < parsed.length && tracks.length < 1000; i++) {
+    var track = normalizeTimeTrack(parsed[i])
+    if (track) tracks.push(track)
+  }
+  return tracks
+}
+
+// Day key → that day's tracks, earliest first.
+function tracksByDay(tracks) {
+  var index = {}
+  var list = Array.isArray(tracks) ? tracks : []
+  for (var i = 0; i < list.length; i++) {
+    var keys = eventDayKeys(list[i])
+    for (var k = 0; k < keys.length; k++) {
+      if (!index[keys[k]]) index[keys[k]] = []
+      index[keys[k]].push(list[i])
+    }
+  }
+  for (var key in index) index[key].sort(function(a, b) { return a.startMs - b.startMs })
+  return index
+}
+
+// Time tracked on a day: only the part of each track that falls on it.
+function trackedOnDay(tracks, dayKey) {
+  var dayStart = dateFromKey(dayKey).getTime()
+  var dayEnd = dateFromKey(addDays(dayKey, 1)).getTime()
+  var total = 0
+  var list = Array.isArray(tracks) ? tracks : []
+  for (var i = 0; i < list.length; i++)
+    total += Math.max(0, Math.min(list[i].endMs, dayEnd) - Math.max(list[i].startMs, dayStart))
+  return total
+}
+
+// The track a stop just finished: the newest one that ended after `sinceMs`.
+function newestTrackSince(tracks, sinceMs) {
+  var best = null
+  var list = Array.isArray(tracks) ? tracks : []
+  for (var i = 0; i < list.length; i++)
+    if (list[i].endMs >= sinceMs && (!best || list[i].endMs > best.endMs)) best = list[i]
+  return best
 }
 
 // ---------------------------------------------------------------------------
@@ -809,13 +910,35 @@ function imminentEvent(events, nowMs, leadMinutes) {
 // What the bar says about an event, after its title: "in 12m" while it is
 // coming, "until 14:30" once it has started, "at 16:30" when it is further
 // off, nothing for an all-day event.
+// Further off it names the day: "tomorrow 09:00", "wed 09:00", "3 oct".
 function barWhen(event, nowMs, hour24) {
-  if (!event || event.allDay || event.startMs === null) return ""
+  if (!event) return ""
+  var todayKey = keyForDate(new Date(nowMs))
+  if (event.allDay || event.startMs === null) {
+    var first = String(event.startsAt).substr(0, 10)
+    if (first <= todayKey) return "today"
+    return dayWord(first, todayKey)
+  }
   if (isNow(event, nowMs)) return event.endMs !== null ? "until " + formatTime(new Date(event.endMs), hour24) : "now"
   var minutes = Math.max(0, Math.round((event.startMs - nowMs) / 60000))
   if (minutes === 0) return "now"
   if (minutes < 60) return "in " + minutes + "m"
-  return "at " + formatTime(new Date(event.startMs), hour24)
+  var startKey = keyForDate(new Date(event.startMs))
+  var time = formatTime(new Date(event.startMs), hour24)
+  if (startKey === todayKey) return "at " + time
+  var days = daysBetween(todayKey, startKey)
+  return days < 7 ? dayWord(startKey, todayKey) + " " + time : dayWord(startKey, todayKey)
+}
+
+var SHORT_WEEKDAYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"]
+var SHORT_MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"]
+
+function dayWord(key, todayKey) {
+  var days = daysBetween(todayKey, key)
+  if (days === 1) return "tomorrow"
+  var date = dateFromKey(key)
+  if (days > 1 && days < 7) return SHORT_WEEKDAYS[date.getDay()]
+  return date.getDate() + " " + SHORT_MONTHS[date.getMonth()]
 }
 
 var barTitleLimit = 28
@@ -828,13 +951,78 @@ function barEventLabel(event, nowMs, hour24) {
   return when === "" ? title : title + " · " + when
 }
 
-// Which event the bar names, by the `barEvent` setting: "soon" (the default)
-// only while one is close or under way, "next" the next one left today all
-// day, "off" none (the glyph alone still marks one that is close).
-function barEvent(mode, todayEvents, nowMs, leadMinutes) {
-  if (mode === "off") return null
-  if (mode === "next") return currentOrNextEvent(todayEvents, nowMs)
-  return imminentEvent(todayEvents, nowMs, leadMinutes)
+// When the bar starts naming an event: at its earliest HEY reminder, so an
+// event you asked to hear about a day ahead is in the bar a day ahead. One
+// without reminders uses the lead time; an all-day one without reminders
+// is never named, the way a birthday nobody set an alert for stays quiet.
+function barWindowStart(event, leadMinutes) {
+  var start = event.allDay ? dateFromKey(String(event.startsAt).substr(0, 10)).getTime() : event.startMs
+  if (start === null) return null
+  var earliest = null
+  var reminders = event.reminders || []
+  for (var i = 0; i < reminders.length; i++)
+    if (reminders[i] <= start && (earliest === null || reminders[i] < earliest)) earliest = reminders[i]
+  if (earliest !== null) return earliest
+  if (event.allDay) return null
+  var lead = normalizedAlertLead(leadMinutes)
+  return lead > 0 ? start - lead * 60000 : null
+}
+
+// Where an event stops being named: its end, or the end of an all-day
+// event's last day.
+function barWindowEnd(event) {
+  if (!event.allDay) return event.endMs === null ? event.startMs : event.endMs
+  var days = eventDayKeys(event)
+  return days.length === 0 ? null : dateFromKey(addDays(days[days.length - 1], 1)).getTime()
+}
+
+// Every event whose bar window is open now, most deserving first:
+//   1. about to start (within the lead time), soonest first: you need to
+//      move, whatever else is going on;
+//   2. under way, the one ending soonest first;
+//   3. coming, inside its reminder window, soonest first;
+//   4. all-day ones.
+function barEvents(events, nowMs, leadMinutes) {
+  var lead = normalizedAlertLead(leadMinutes) * 60000
+  var list = Array.isArray(events) ? events : []
+  var open = []
+  for (var i = 0; i < list.length; i++) {
+    var event = list[i]
+    if (isDeclined(event)) continue
+    var from = barWindowStart(event, leadMinutes)
+    var until = barWindowEnd(event)
+    if (from === null || until === null || nowMs < from || nowMs >= until) continue
+    var rank
+    var order
+    if (event.allDay) { rank = 4; order = from }
+    else if (isNow(event, nowMs)) { rank = 2; order = until }
+    else if (event.startMs - nowMs <= lead) { rank = 1; order = event.startMs }
+    else { rank = 3; order = event.startMs }
+    open.push({ event: event, rank: rank, order: order })
+  }
+  open.sort(function(a, b) { return a.rank - b.rank || a.order - b.order || compareEvents(a.event, b.event) })
+  return open.map(function(o) { return o.event })
+}
+
+// Which events the bar names, by the `barEvent` setting: "soon" (the
+// default) those inside their alert windows, "next" the next one left today
+// all day, "off" none.
+function barSelection(mode, events, todayEvents, nowMs, leadMinutes) {
+  if (mode === "off") return []
+  if (mode === "next") {
+    var open = barEvents(events, nowMs, leadMinutes)
+    if (open.length > 0) return open
+    var next = currentOrNextEvent(todayEvents, nowMs)
+    return next ? [next] : []
+  }
+  return barEvents(events, nowMs, leadMinutes)
+}
+
+// The first event and how many more: "Podcast · in 12m  +1".
+function barLabel(selection, nowMs, hour24) {
+  if (!selection || selection.length === 0) return ""
+  var label = barEventLabel(selection[0], nowMs, hour24)
+  return selection.length > 1 ? label + "  +" + (selection.length - 1) : label
 }
 
 function minutesUntil(event, nowMs) {
@@ -1241,6 +1429,14 @@ if (typeof module !== "undefined") {
     calendarsCommand: calendarsCommand,
     timeTrackCommand: timeTrackCommand,
     watchCommand: watchCommand,
+    timeTracksCommand: timeTracksCommand,
+    timeTrackRenameCommand: timeTrackRenameCommand,
+    timeTrackDeleteCommand: timeTrackDeleteCommand,
+    normalizeTimeTrack: normalizeTimeTrack,
+    parseTimeTracks: parseTimeTracks,
+    tracksByDay: tracksByDay,
+    trackedOnDay: trackedOnDay,
+    newestTrackSince: newestTrackSince,
     timeTrackStartCommand: timeTrackStartCommand,
     timeTrackStopCommand: timeTrackStopCommand,
     deleteCommand: deleteCommand,
@@ -1277,7 +1473,10 @@ if (typeof module !== "undefined") {
     minutesUntil: minutesUntil,
     barWhen: barWhen,
     barEventLabel: barEventLabel,
-    barEvent: barEvent,
+    barWindowStart: barWindowStart,
+    barEvents: barEvents,
+    barSelection: barSelection,
+    barLabel: barLabel,
     normalizedRefreshInterval: normalizedRefreshInterval,
     reminderKey: reminderKey,
     dueReminders: dueReminders,

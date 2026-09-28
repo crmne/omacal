@@ -172,16 +172,55 @@ test("occurrences keep their local wall-clock time across DST", function() {
 
 // ---- Bar
 
-test("the bar names a close event, and says when", function() {
+test("the bar names an event and says when", function() {
   var e = timed(1, "Omarchy Podcast", 2026, 9, 28, 13, 0, 90)
   var before = e.startMs - 12 * 60000
   assert.strictEqual(Hey.barEventLabel(e, before, true), "Omarchy Podcast · in 12m")
   assert.strictEqual(Hey.barEventLabel(e, e.startMs + 60000, true), "Omarchy Podcast · until 14:30")
   assert.strictEqual(Hey.barEventLabel(e, e.startMs - 3 * 3600000, true), "Omarchy Podcast · at 13:00")
-  assert.strictEqual(Hey.barEvent("soon", [e], before, 15), e)
-  assert.strictEqual(Hey.barEvent("soon", [e], e.startMs - 3 * 3600000, 15), null)
-  assert.strictEqual(Hey.barEvent("next", [e], e.startMs - 3 * 3600000, 15), e)
-  assert.strictEqual(Hey.barEvent("off", [e], before, 15), null)
+  assert.strictEqual(Hey.barEventLabel(e, e.startMs - 24 * 3600000, true), "Omarchy Podcast · tomorrow 13:00")
+})
+
+test("the bar opens at the earliest reminder, or the lead time without one", function() {
+  var e = timed(1, "Flight", 2026, 9, 28, 13, 0, 90)
+  e.reminders = [e.startMs - 30 * 60000, e.startMs - 24 * 3600000]
+  assert.deepStrictEqual(Hey.barSelection("soon", [e], [], e.startMs - 20 * 3600000, 15), [e])
+  assert.deepStrictEqual(Hey.barSelection("soon", [e], [], e.startMs - 25 * 3600000, 15), [])
+  var plain = timed(2, "Call", 2026, 9, 28, 13, 0, 30)
+  assert.deepStrictEqual(Hey.barSelection("soon", [plain], [], plain.startMs - 20 * 60000, 15), [])
+  assert.deepStrictEqual(Hey.barSelection("soon", [plain], [], plain.startMs - 10 * 60000, 15), [plain])
+  assert.deepStrictEqual(Hey.barSelection("soon", [plain], [], plain.endMs, 15), [])
+})
+
+test("all-day events show from their reminder, never without one", function() {
+  var bday = allDay(3, "Lena's bday", "2026-09-29")
+  var eve = new Date(2026, 8, 28, 20, 0).getTime()
+  assert.deepStrictEqual(Hey.barSelection("soon", [bday], [], eve, 15), [])
+  bday.reminders = [new Date(2026, 8, 28, 8, 0).getTime()]
+  assert.deepStrictEqual(Hey.barSelection("soon", [bday], [], eve, 15), [bday])
+  assert.strictEqual(Hey.barEventLabel(bday, eve, true), "Lena's bday · tomorrow")
+  assert.deepStrictEqual(Hey.barSelection("soon", [bday], [], new Date(2026, 8, 30, 0, 1).getTime(), 15), [])
+})
+
+test("overlaps: about to start beats under way beats coming beats all day", function() {
+  var now = new Date(2026, 9, 1, 10, 0).getTime()
+  var meeting = timed(1, "Meeting", 2026, 10, 1, 9, 30, 60)
+  var soon = timed(2, "Standup", 2026, 10, 1, 10, 10, 15)
+  var later = timed(3, "Lunch", 2026, 10, 1, 12, 0, 60)
+  later.reminders = [later.startMs - 3 * 3600000]
+  var holiday = allDay(4, "Holiday", "2026-10-01", "2026-10-01", { reminders: ["2026-09-30T08:00:00Z"] })
+  var pick = Hey.barSelection("soon", [holiday, later, meeting, soon], [], now, 15)
+  assert.deepStrictEqual(pick.map(function(e) { return e.title }), ["Standup", "Meeting", "Lunch", "Holiday"])
+  assert.strictEqual(Hey.barLabel(pick, now, true), "Standup · in 10m  +3")
+  var afterStandup = Hey.barSelection("soon", [meeting, later], [], now + 5 * 60000, 15)
+  assert.strictEqual(afterStandup[0].title, "Meeting")
+})
+
+test("next mode falls back to today's next event", function() {
+  var e = timed(1, "Dinner", 2026, 9, 28, 18, 30, 60)
+  var now = e.startMs - 3 * 3600000
+  assert.deepStrictEqual(Hey.barSelection("next", [e], [e], now, 15), [e])
+  assert.deepStrictEqual(Hey.barSelection("off", [e], [e], e.startMs - 60000, 15), [])
 })
 
 test("long titles are cut to fit the bar", function() {

@@ -40,8 +40,11 @@ BarWidget {
   // The event the bar names in front of the clock, as the macOS menu-bar
   // calendars do. Horizontal bars only: a vertical one has no room.
   readonly property string barEventMode: String(setting("barEvent", "soon"))
-  readonly property var shownEvent: Hey.barEvent(barEventMode, todayEvents, displayDate.getTime(), alertLeadMinutes)
-  readonly property string eventText: shownEvent ? Hey.barEventLabel(shownEvent, displayDate.getTime(), hour24) : ""
+  // Every event inside its alert window (from its earliest HEY reminder
+  // until it ends), most pressing first; the bar names the first and counts
+  // the rest.
+  readonly property var shownEvents: Hey.barSelection(barEventMode, events, todayEvents, displayDate.getTime(), alertLeadMinutes)
+  readonly property string eventText: Hey.barLabel(shownEvents, displayDate.getTime(), hour24)
   readonly property string displayText: eventText !== ""
     ? calendarGlyph + " " + eventText + "   " + dateText
     : (alerting ? calendarGlyph + "  " + dateText : dateText)
@@ -82,6 +85,12 @@ BarWidget {
   property var calendars: []
   readonly property var writableCalendars: Hey.writableCalendars(calendars)
   property var timeTrack: null
+  // Finished time tracks by day, and the one waiting to be named: set when
+  // a Stop lands, so the panel can ask for a name right away.
+  property var timeTracks: []
+  property var tracksByDay: ({})
+  property string renameTrackId: ""
+  property real stoppedAt: 0
   property bool loading: false
   // "Nothing on today" and "we have not looked yet" are the same empty list
   // and very different things to put on screen.
@@ -96,7 +105,7 @@ BarWidget {
   readonly property var todayEvents: byDay[todayKey] || []
   readonly property var nextEvent: Hey.currentOrNextEvent(todayEvents, displayDate.getTime())
   readonly property var alertEvent: Hey.imminentEvent(todayEvents, displayDate.getTime(), alertLeadMinutes)
-  readonly property bool alerting: alertEvent !== null
+  readonly property bool alerting: alertEvent !== null || shownEvents.length > 0
 
   // Reminders that came due before the shell started are not replayed.
   readonly property real startedAt: Date.now()
@@ -130,6 +139,19 @@ BarWidget {
 
   function refreshTimeTrack() {
     if (!timeTrackProcess.running) timeTrackProcess.running = true
+    if (!timeTracksProcess.running) timeTracksProcess.running = true
+  }
+
+  function applyTimeTracks(text) {
+    var parsed = Hey.parseTimeTracks(text)
+    if (parsed === null) return
+    root.timeTracks = parsed
+    root.tracksByDay = Hey.tracksByDay(parsed)
+    if (root.stoppedAt > 0) {
+      var stopped = Hey.newestTrackSince(parsed, root.stoppedAt - 120000)
+      if (stopped) root.renameTrackId = stopped.id
+      root.stoppedAt = 0
+    }
   }
 
   function showWeeks(keys) {
@@ -276,6 +298,7 @@ BarWidget {
     if (!ok && message === "")
       message = exitCode === 124 ? "HEY took too long to answer." : "HEY did not accept that (exit " + exitCode + ")."
     root.writeError = ok ? "" : message
+    if (!ok) root.stoppedAt = 0
     if (root.writingDayKey !== "") invalidateDay(root.writingDayKey)
     refreshTimeTrack()
     root.writeFinished(ok, message)
@@ -300,7 +323,17 @@ BarWidget {
   }
 
   function stopTimeTrack() {
+    root.stoppedAt = Date.now()
     return runWrite(Hey.timeTrackStopCommand(), "")
+  }
+
+  function renameTimeTrack(id, name) {
+    root.renameTrackId = ""
+    return runWrite(Hey.timeTrackRenameCommand(id, name), "")
+  }
+
+  function deleteTimeTrack(id) {
+    return runWrite(Hey.timeTrackDeleteCommand(id), "")
   }
 
   function openUrl(url) {
@@ -479,6 +512,15 @@ BarWidget {
   }
 
   Process {
+    id: timeTracksProcess
+    running: false
+    command: Hey.timeTracksCommand
+    stdout: StdioCollector {
+      onStreamFinished: root.applyTimeTracks(text)
+    }
+  }
+
+  Process {
     id: writeProcess
     running: false
     command: []
@@ -565,6 +607,12 @@ BarWidget {
     tooltipText: {
       if (root.lastError !== "") return "HEY: " + root.lastError
       if (!root.loaded) return ""
+      if (root.shownEvents.length > 0) {
+        var lines = []
+        for (var i = 0; i < root.shownEvents.length && i < 8; i++)
+          lines.push(Hey.barEventLabel(root.shownEvents[i], root.displayDate.getTime(), root.hour24))
+        return lines.join("\n")
+      }
       if (root.alerting) {
         var minutes = Hey.minutesUntil(root.alertEvent, root.displayDate.getTime())
         return (minutes <= 0 ? "Now" : "In " + minutes + " min") + " · " + root.alertEvent.title
