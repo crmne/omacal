@@ -14,7 +14,14 @@ ShellRoot {
   id: shell
 
   readonly property string outDir: Quickshell.env("OMACAL_PREVIEW_OUT")
-  readonly property date now: new Date()
+  // OMACAL_PREVIEW_TIME=HH:MM renders today at that time (the launch video
+  // uses 10:40); otherwise it is rendered at the current time.
+  readonly property date now: {
+    var d = new Date()
+    var at = /^(\d{1,2}):(\d{2})$/.exec(Quickshell.env("OMACAL_PREVIEW_TIME") || "")
+    if (at) d.setHours(parseInt(at[1], 10), parseInt(at[2], 10), 0, 0)
+    return d
+  }
   readonly property string todayKey: Cal.keyForDate(now)
 
   // ---- A fictional calendar, laid out around today.
@@ -43,7 +50,7 @@ ShellRoot {
     timed(2, "Team standup", "Work", "blue", 0, 9, 30, 15),
     timed(3, "Design review: onboarding", "Work", "blue", 0, 11, 0, 90, { location: "Studio 3" }),
     timed(4, "Lunch with Maya", "Friends", "gold", 0, 13, 0, 60, { location: "Café Luna" }),
-    timed(5, "Climbing", "Health", "green", 0, now.getHours() - 1, 0, 150, { location: "Boulderhalle" }),
+    timed(5, "Climbing", "Health", "green", 0, 18, 30, 90, { location: "Boulderhalle" }),
     timed(6, "Team standup", "Work", "blue", 1, 9, 30, 15),
     timed(7, "Dentist", "Health", "green", 1, 16, 0, 45),
     timed(8, "Team standup", "Work", "blue", 2, 9, 30, 15),
