@@ -34,9 +34,22 @@
       "liveSync": true,
       "timeFormat": "auto",
       "refreshIntervalSec": 300,
-      "quickAddShortcut": "ALT + SHIFT + SPACE"
+      "quickAddShortcut": "ALT + SHIFT + SPACE",
+      "barEvent": "soon"
     },
     "schema": [
+      {
+        "key": "barEvent",
+        "type": "enum",
+        "label": "Event in the bar",
+        "options": [
+          "soon",
+          "next",
+          "off"
+        ],
+        "defaultValue": "soon",
+        "description": "\"soon\" names an event in front of the clock from the lead time below until it ends. \"next\" always names today's next event. \"off\" shows only the calendar glyph."
+      },
       {
         "key": "notifications",
         "type": "boolean",

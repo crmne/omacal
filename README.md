@@ -27,8 +27,12 @@ Omarchy's stock clock and calendar, exactly as it ships, with your
 - **Time tracking.** Start and stop HEY's time tracker from today's view.
 - **Live sync.** A `hey watch` stream refreshes the panel within seconds of
   a change made anywhere else, with polling as the fallback.
-- The bar label is the stock clock. A calendar glyph appears in front of it
-  from 15 minutes before an event until it ends.
+- **In the bar**, like a macOS menu-bar calendar: from 15 minutes before an
+  event until it ends, its name and when sit in front of the stock clock
+  (`󰃭 Omarchy Podcast · in 12m`, then `· until 14:30`). The `barEvent`
+  setting can show today's next event all day instead, or only the glyph.
+- **Today in HEY's orange**, in the grid as well as the day view, and a
+  **Today** button (or `T`) back to it whenever you have moved away.
 
 ## Requirements
 
@@ -97,9 +101,10 @@ The stock ones all work: arrows, `[` `]` months, `{` `}` years, `T` today,
 
 | Key | Default | Meaning |
 | --- | --- | --- |
+| `barEvent` | `soon` | `soon`: name an event in the bar from `alertLeadMinutes` before it until it ends. `next`: always name today's next event. `off`: the glyph only. |
 | `notifications` | `true` | Show HEY reminders as notifications. |
 | `quickAddShortcut` | `ALT + SHIFT + SPACE` | Opens the quick-add card. Empty turns it off. |
-| `alertLeadMinutes` | `15` | When the bar glyph appears. `0` turns it off. |
+| `alertLeadMinutes` | `15` | How early the bar names an event. `0` turns it off. |
 | `timeFormat` | `auto` | `auto`, `12` or `24`. |
 | `liveSync` | `true` | Keep a `hey watch` running for instant updates. |
 | `refreshIntervalSec` | `300` | Polling fallback, 30 to 3600. |

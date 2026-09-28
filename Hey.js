@@ -806,6 +806,37 @@ function imminentEvent(events, nowMs, leadMinutes) {
   return soonest
 }
 
+// What the bar says about an event, after its title: "in 12m" while it is
+// coming, "until 14:30" once it has started, "at 16:30" when it is further
+// off, nothing for an all-day event.
+function barWhen(event, nowMs, hour24) {
+  if (!event || event.allDay || event.startMs === null) return ""
+  if (isNow(event, nowMs)) return event.endMs !== null ? "until " + formatTime(new Date(event.endMs), hour24) : "now"
+  var minutes = Math.max(0, Math.round((event.startMs - nowMs) / 60000))
+  if (minutes === 0) return "now"
+  if (minutes < 60) return "in " + minutes + "m"
+  return "at " + formatTime(new Date(event.startMs), hour24)
+}
+
+var barTitleLimit = 28
+
+function barEventLabel(event, nowMs, hour24) {
+  if (!event) return ""
+  var title = String(event.title || "")
+  if (title.length > barTitleLimit) title = title.substr(0, barTitleLimit - 1).replace(/\s+$/, "") + "…"
+  var when = barWhen(event, nowMs, hour24)
+  return when === "" ? title : title + " · " + when
+}
+
+// Which event the bar names, by the `barEvent` setting: "soon" (the default)
+// only while one is close or under way, "next" the next one left today all
+// day, "off" none (the glyph alone still marks one that is close).
+function barEvent(mode, todayEvents, nowMs, leadMinutes) {
+  if (mode === "off") return null
+  if (mode === "next") return currentOrNextEvent(todayEvents, nowMs)
+  return imminentEvent(todayEvents, nowMs, leadMinutes)
+}
+
 function minutesUntil(event, nowMs) {
   if (!event || event.allDay || event.startMs === null) return 0
   return Math.round((event.startMs - nowMs) / 60000)
@@ -1244,6 +1275,9 @@ if (typeof module !== "undefined") {
     normalizedAlertLead: normalizedAlertLead,
     imminentEvent: imminentEvent,
     minutesUntil: minutesUntil,
+    barWhen: barWhen,
+    barEventLabel: barEventLabel,
+    barEvent: barEvent,
     normalizedRefreshInterval: normalizedRefreshInterval,
     reminderKey: reminderKey,
     dueReminders: dueReminders,

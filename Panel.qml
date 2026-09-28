@@ -805,25 +805,36 @@ Panel {
                       width: root.cellWidth
                       height: root.cellHeight
                       radius: Style.cornerRadius
-                      // Today is outlined, not filled: a lit-up block shouts
-                      // over a grid this quiet. The selected day takes a soft
-                      // fill instead, so picking a day never outshouts today.
+                      // The selected day takes a soft fill. Today is marked on
+                      // its number instead (below), so the two never compete.
                       color: selected
                         ? Style.selectionFillFor(root.contentForeground, Color.accent)
                         : (cellMouse.containsMouse ? Style.hoverFillFor(root.contentForeground, Color.accent) : "transparent")
-                      border.width: modelData.today ? Style.spacing.hairline : 0
-                      border.color: Style.normalBorderFor(root.contentForeground, Color.accent)
+
+                      // Today, the way HEY marks it: the number on HEY's warm
+                      // orange, the same as the day view's heading.
+                      Rectangle {
+                        visible: modelData.today
+                        anchors.centerIn: dayNumber
+                        width: Math.max(height, dayNumber.implicitWidth + Style.space(12))
+                        height: dayNumber.implicitHeight + Style.space(2)
+                        radius: height / 2
+                        color: Hey.todayColor
+                      }
 
                       Text {
+                        id: dayNumber
                         textFormat: Text.PlainText
                         anchors.horizontalCenter: parent.horizontalCenter
                         // The number sits where it always does, chips or
                         // not, so a row reads as one line of dates.
                         y: Style.space(5)
                         text: modelData.day
-                        color: modelData.inMonth
-                          ? (modelData.weekend ? Qt.darker(root.contentForeground, 1.45) : root.contentForeground)
-                          : Qt.darker(root.contentForeground, 2.2)
+                        color: modelData.today
+                          ? Hey.calendarInk
+                          : (modelData.inMonth
+                            ? (modelData.weekend ? Qt.darker(root.contentForeground, 1.45) : root.contentForeground)
+                            : Qt.darker(root.contentForeground, 2.2))
                         font.family: root.contentFontFamily
                         font.pixelSize: Style.font.body
                         font.bold: modelData.today
@@ -1027,6 +1038,21 @@ Panel {
                   anchors.right: parent.right
                   anchors.rightMargin: -Style.space(8)
                   anchors.verticalCenter: parent.verticalCenter
+                  spacing: Style.space(4)
+
+                  // Back to today, once you have wandered off it.
+                  Button {
+                    anchors.verticalCenter: parent.verticalCenter
+                    visible: !root.selectedIsToday || !root.viewingCurrentMonth
+                    text: "Today"
+                    tooltipText: "Go to today (T)"
+                    bordered: true
+                    foreground: root.contentForeground
+                    fontFamily: root.contentFontFamily
+                    fontSize: Style.font.bodySmall
+                    verticalPadding: Style.space(3)
+                    onClicked: root.goToToday()
+                  }
 
                   PanelActionButton {
                     iconText: "󰐕"

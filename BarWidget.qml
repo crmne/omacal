@@ -37,7 +37,14 @@ BarWidget {
   readonly property string activeFormat: configuredFormat
   readonly property string dateText: formatted(displayDate)
   readonly property string calendarGlyph: "󰃭"
-  readonly property string displayText: alerting ? calendarGlyph + "  " + dateText : dateText
+  // The event the bar names in front of the clock, as the macOS menu-bar
+  // calendars do. Horizontal bars only: a vertical one has no room.
+  readonly property string barEventMode: String(setting("barEvent", "soon"))
+  readonly property var shownEvent: Hey.barEvent(barEventMode, todayEvents, displayDate.getTime(), alertLeadMinutes)
+  readonly property string eventText: shownEvent ? Hey.barEventLabel(shownEvent, displayDate.getTime(), hour24) : ""
+  readonly property string displayText: eventText !== ""
+    ? calendarGlyph + " " + eventText + "   " + dateText
+    : (alerting ? calendarGlyph + "  " + dateText : dateText)
   // Vertical bars stack one line per icon slot, so the glyph takes a line of
   // its own rather than being crammed onto the hour.
   readonly property var verticalLines: alerting

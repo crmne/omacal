@@ -170,6 +170,25 @@ test("occurrences keep their local wall-clock time across DST", function() {
   assert.strictEqual(out[0].key !== e.key, true)
 })
 
+// ---- Bar
+
+test("the bar names a close event, and says when", function() {
+  var e = timed(1, "Omarchy Podcast", 2026, 9, 28, 13, 0, 90)
+  var before = e.startMs - 12 * 60000
+  assert.strictEqual(Hey.barEventLabel(e, before, true), "Omarchy Podcast · in 12m")
+  assert.strictEqual(Hey.barEventLabel(e, e.startMs + 60000, true), "Omarchy Podcast · until 14:30")
+  assert.strictEqual(Hey.barEventLabel(e, e.startMs - 3 * 3600000, true), "Omarchy Podcast · at 13:00")
+  assert.strictEqual(Hey.barEvent("soon", [e], before, 15), e)
+  assert.strictEqual(Hey.barEvent("soon", [e], e.startMs - 3 * 3600000, 15), null)
+  assert.strictEqual(Hey.barEvent("next", [e], e.startMs - 3 * 3600000, 15), e)
+  assert.strictEqual(Hey.barEvent("off", [e], before, 15), null)
+})
+
+test("long titles are cut to fit the bar", function() {
+  var e = timed(1, "A very long meeting title that goes on and on", 2026, 9, 28, 13, 0, 30)
+  assert.ok(Hey.barEventLabel(e, e.startMs - 60000, true).indexOf("…") !== -1)
+})
+
 // ---- Reminders
 
 test("due reminders fire once, and never for what came due before start", function() {
