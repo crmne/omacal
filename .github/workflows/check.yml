@@ -1,0 +1,32 @@
+name: Check
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+      - name: Tests, in five timezones
+        run: tests/run
+      - name: Model.js is Omarchy's, unchanged
+        run: git diff --exit-code "$(git rev-list --max-parents=0 HEAD)" -- Model.js
+      - name: Parse QML
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qt6-declarative-dev-tools
+          find . -name '*.qml' -not -path './.git/*' -print0 | while IFS= read -r -d '' file; do
+            /usr/lib/qt6/bin/qmlformat "$file" > /dev/null
+          done
+      - name: Check whitespace and shell scripts
+        run: |
+          git diff-tree --check --root HEAD
+          bash -n tests/run tools/render-screenshots

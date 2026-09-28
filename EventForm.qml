@@ -41,6 +41,11 @@ Item {
   signal submitted(var form)
   signal canceled()
 
+  property alias title: titleField.text
+  property alias dayText: dateField.text
+  property alias startText: startField.text
+  property alias endText: endField.text
+  property alias locationText: locationField.text
   property int calendarId: 0
   property bool allDay: false
   property string remind: "30m"

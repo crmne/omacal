@@ -176,12 +176,12 @@ test("occurrences keep their local wall-clock time across DST", function() {
 // ---- Bar
 
 test("the bar names an event and says when", function() {
-  var e = timed(1, "Omarchy Podcast", 2026, 9, 28, 13, 0, 90)
+  var e = timed(1, "Team sync", 2026, 9, 28, 13, 0, 90)
   var before = e.startMs - 12 * 60000
-  assert.strictEqual(Hey.barEventLabel(e, before, true), "Omarchy Podcast · in 12m")
-  assert.strictEqual(Hey.barEventLabel(e, e.startMs + 60000, true), "Omarchy Podcast · until 14:30")
-  assert.strictEqual(Hey.barEventLabel(e, e.startMs - 3 * 3600000, true), "Omarchy Podcast · at 13:00")
-  assert.strictEqual(Hey.barEventLabel(e, e.startMs - 24 * 3600000, true), "Omarchy Podcast · tomorrow 13:00")
+  assert.strictEqual(Hey.barEventLabel(e, before, true), "Team sync · in 12m")
+  assert.strictEqual(Hey.barEventLabel(e, e.startMs + 60000, true), "Team sync · until 14:30")
+  assert.strictEqual(Hey.barEventLabel(e, e.startMs - 3 * 3600000, true), "Team sync · at 13:00")
+  assert.strictEqual(Hey.barEventLabel(e, e.startMs - 24 * 3600000, true), "Team sync · tomorrow 13:00")
 })
 
 test("the bar opens at the earliest reminder, or the lead time without one", function() {
@@ -345,11 +345,11 @@ function build(form) {
 
 test("the add command is an argv, with every field in its own argument", function() {
   var built = build({ title: "Dinner; rm -rf ~", date: "2026-09-28", startTime: "7pm", endTime: "22:00",
-    calendarId: 383706, location: "Aedes", remind: "30m" })
+    calendarId: 3, location: "Café Luna", remind: "30m" })
   var args = built.command
   assert.ok(args.indexOf("Dinner; rm -rf ~") !== -1)
   assert.deepStrictEqual(args.slice(args.indexOf("--start-time"), args.indexOf("--start-time") + 2), ["--start-time", "19:00"])
-  assert.ok(args.indexOf("--calendar") !== -1 && args.indexOf("383706") !== -1)
+  assert.ok(args.indexOf("--calendar") !== -1 && args.indexOf("3") !== -1)
   assert.ok(args.indexOf("--remind") !== -1)
 })
 

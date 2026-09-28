@@ -1,5 +1,5 @@
 #!/bin/bash
-# Runs the Hey.js suite in timezones on both sides of Greenwich and the date
+# Runs the Calendar.js suite in timezones on both sides of Greenwich and the date
 # line, since all-day placement and multi-day spans are exactly what breaks
 # when a date is read as an instant.
 set -e

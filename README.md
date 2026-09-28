@@ -35,7 +35,7 @@ plug in as backends (see [Backends](#backends)).
 - **Live sync.** HEY's `hey watch` stream refreshes the panel within seconds of
   a change made anywhere else, with polling as the fallback.
 - **In the bar**, like a macOS menu-bar calendar: an event's name and when
-  sit in front of the stock clock (`󰃭 Omarchy Podcast · in 12m`, then
+  sit in front of the stock clock (`󰃭 Team standup · in 12m`, then
   `· until 14:30`) from its **earliest reminder** until it ends. A day
   ahead if you asked for a day's notice, 30 minutes if 30. Without
   reminders it uses `alertLeadMinutes`; all-day events only show when they
@@ -45,6 +45,16 @@ plug in as backends (see [Backends](#backends)).
   soonest first), then what is coming, then all-day events.
 - **Today in HEY's orange**, in the grid as well as the day view, and a
   **Today** button (or `T`) back to it whenever you have moved away.
+
+<p>
+  <img src="screenshots/quick-add.png" alt="The quick-add card, filled in" width="49%">
+  <img src="screenshots/settings.png" alt="The settings, inside the panel" width="49%">
+</p>
+
+![The bar, naming the next event](screenshots/bar.png)
+
+The screenshots are the real plugin with a made-up calendar
+(`tools/render-screenshots`).
 
 ## Requirements
 
@@ -194,3 +204,6 @@ model, and `backends/` the services; both run under plain node.
 
 [MIT](LICENSE). Portions are Omarchy's own clock plugin, also MIT; see
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+OmaCal is an independent project, not created by, affiliated with, or
+supported by HEY or 37signals.

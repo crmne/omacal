@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# Renders the README and release screenshots from tools/preview/shell.qml:
+# OmaCal's real panel, quick-add form, settings and bar label, with a made-up
+# calendar. Nothing reads or writes a real calendar. Needs a running Wayland
+# session, since the panel is a layer-shell surface; the windows it opens are
+# on screen for a few seconds.
+set -euo pipefail
+
+repo=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+shell_dir=${OMARCHY_PATH:-/usr/share/omarchy}/shell
+work=$(mktemp -d /tmp/omacal-preview.XXXXXX)
+trap 'rm -rf -- "$work"' EXIT
+
+ln -s "$shell_dir/Commons" "$work/Commons"
+ln -s "$shell_dir/Ui" "$work/Ui"
+ln -s "$repo" "$work/plugin"
+cp "$repo/tools/preview/shell.qml" "$work/shell.qml"
+mkdir -p "$work/out" "$repo/screenshots"
+
+OMACAL_PREVIEW_OUT="$work/out" timeout 30s quickshell -p "$work" --no-color >/dev/null 2>&1 || true
+
+# The panel is grabbed with its full-screen layer; trim to the card.
+python3 - "$work/out" "$repo/screenshots" <<'PY'
+import sys
+from pathlib import Path
+from PIL import Image
+src, dst = Path(sys.argv[1]), Path(sys.argv[2])
+for name in ["panel-full.png", "settings-full.png", "quick-add.png", "bar.png"]:
+    path = src / name
+    if not path.exists():
+        sys.exit(f"missing {name}")
+    image = Image.open(path).convert("RGBA")
+    box = image.getchannel("A").getbbox()
+    image.crop(box).save(dst / name.replace("-full", ""))
+    print("wrote", dst / name.replace("-full", ""))
+PY

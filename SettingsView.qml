@@ -67,9 +67,9 @@ FocusScope {
   // the chip under the pointer, or the chosen one.
   readonly property var barEventOptions: [
     { value: "soon", label: "Name + time",
-      help: "Shows the event's name and when it starts, like “Omarchy Podcast · in 12m”, from its earliest alert until it ends." },
+      help: "Shows the event's name and when it starts, like “Team standup · in 12m”, from its earliest alert until it ends." },
     { value: "name", label: "Name",
-      help: "Shows only the event's name, like “Omarchy Podcast”, from its earliest alert until it ends." },
+      help: "Shows only the event's name, like “Team standup”, from its earliest alert until it ends." },
     { value: "time", label: "Time",
       help: "Shows only when the event starts, like “in 12m”, without its name, from its earliest alert until it ends." },
     { value: "next", label: "Next",
@@ -225,8 +225,9 @@ FocusScope {
 
     Toggle {
       width: parent.width
+      visible: !!root.host && root.host.capabilities.watch
       label: "Live sync"
-      description: "Follow changes made elsewhere within seconds, through hey watch."
+      description: "Follow changes made elsewhere within seconds."
       checked: root.value("liveSync", true) !== false
       foreground: root.foreground
       fontFamily: root.fontFamily
