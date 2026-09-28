@@ -162,6 +162,16 @@ Item {
     WlrLayershell.layer: WlrLayer.Overlay
     WlrLayershell.keyboardFocus: root.opened ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
 
+    // Focus asked for before the compositor has handed the window the
+    // keyboard is lost, so the title is focused again once it has.
+    onVisibleChanged: if (visible) focusAfterMap.restart()
+
+    Timer {
+      id: focusAfterMap
+      interval: 80
+      onTriggered: form.focusTitle()
+    }
+
     MouseArea {
       anchors.fill: parent
       onClicked: root.dismiss()

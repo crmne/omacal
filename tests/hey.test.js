@@ -222,6 +222,18 @@ test("day input is forgiving, relative to today (a Monday)", function() {
   assert.strictEqual(Hey.parseDay("someday", today), "")
 })
 
+test("arrow keys nudge times on a quarter-hour grid, and wrap lists", function() {
+  assert.strictEqual(Hey.nudgeClock("9:07", 15, ""), "09:15")
+  assert.strictEqual(Hey.nudgeClock("9:07", -15, ""), "09:00")
+  assert.strictEqual(Hey.nudgeClock("09:00", 15, ""), "09:15")
+  assert.strictEqual(Hey.nudgeClock("", 15, "14:00"), "14:15")
+  assert.strictEqual(Hey.nudgeClock("23:45", 15, ""), "00:00")
+  assert.strictEqual(Hey.shiftClock("9:30", 60), "10:30")
+  assert.strictEqual(Hey.cycle([1, 2, 3], 3, 1), 1)
+  assert.strictEqual(Hey.cycle([1, 2, 3], 1, -1), 3)
+  assert.strictEqual(Hey.cycle(["", "10m"], "", 1), "10m")
+})
+
 test("the add command is an argv, with every field in its own argument", function() {
   var built = Hey.addEventCommand({ title: "Dinner; rm -rf ~", date: "2026-09-28", startTime: "7pm", endTime: "22:00",
     calendarId: 383706, location: "Aedes", remind: "30m" })

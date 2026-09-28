@@ -64,6 +64,24 @@ hover-only widgets appear:
 
 ## Keys
 
+### New-event form (panel and quick add)
+
+The form never needs the mouse. A hint line under it says what the keys do
+where the focus is.
+
+| Key | Does |
+| --- | --- |
+| `Tab` / `Shift+Tab` | Next / previous field, the calendar and reminder rows included |
+| `←` `→` | On the calendar row: switch calendar. On the reminder row: switch reminder. On all day: toggle |
+| `↑` `↓` | In a time: 15 minutes earlier or later. In the day: a day (`Shift`: a week) |
+| `Alt+←` `Alt+→` | Switch calendar, from any field |
+| `Alt+↑` `Alt+↓` | Switch reminder, from any field |
+| `Alt+A` | Toggle all day, from any field |
+| `Enter` | Add the event |
+| `Esc` | Cancel |
+
+### Calendar panel
+
 The stock ones all work: arrows, `[` `]` months, `{` `}` years, `T` today,
 `W` week start. Added:
 

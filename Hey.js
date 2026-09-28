@@ -1001,6 +1001,34 @@ function clockFromMinutes(total) {
   return pad2(Math.floor(wrapped / 60)) + ":" + pad2(wrapped % 60)
 }
 
+// Up and Down in a time field: moves it by `delta` minutes, landing on the
+// grid of that step ("9:07" up by 15 is 9:15, not 9:22). A blank or
+// unreadable field starts from `fallback`.
+function nudgeClock(text, delta, fallback) {
+  var current = parseClock(text)
+  if (current === "") current = parseClock(fallback)
+  if (current === "") return ""
+  var minutes = clockMinutes(current)
+  var step = Math.abs(delta) || 15
+  var snapped = delta > 0 ? Math.floor(minutes / step) * step + step : Math.ceil(minutes / step) * step - step
+  return clockFromMinutes(snapped)
+}
+
+// "09:30" plus 60 is "10:30", unsnapped. "" when the time is unreadable.
+function shiftClock(text, minutes) {
+  var current = parseClock(text)
+  return current === "" ? "" : clockFromMinutes(clockMinutes(current) + minutes)
+}
+
+// Steps through a list, wrapping at both ends. Unknown current values
+// start from the first entry.
+function cycle(list, current, delta) {
+  if (!list || list.length === 0) return current
+  var index = list.indexOf(current)
+  if (index === -1) return list[0]
+  return list[((index + delta) % list.length + list.length) % list.length]
+}
+
 // The next half hour from now, which is what a fresh event on today starts at.
 // Other days start at nine, the way HEY's own form fills in.
 function suggestedStart(dayKey, now) {
@@ -1224,6 +1252,9 @@ if (typeof module !== "undefined") {
     notifyCommand: notifyCommand,
     parseClock: parseClock,
     parseDay: parseDay,
+    nudgeClock: nudgeClock,
+    shiftClock: shiftClock,
+    cycle: cycle,
     suggestedStart: suggestedStart,
     reminderChoices: reminderChoices,
     addEventCommand: addEventCommand,
