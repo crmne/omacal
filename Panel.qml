@@ -93,7 +93,19 @@ Panel {
   readonly property var selectedEvents: byDay[selectedKey] || []
   readonly property bool selectedIsToday: selectedKey === todayKey
   property bool composing: false
+  property bool showingSettings: false
   property string deletingKey: ""
+
+  function openSettings() {
+    root.composing = false
+    root.showingSettings = true
+    settingsView.focusFirst()
+  }
+
+  function closeSettings() {
+    root.showingSettings = false
+    Qt.callLater(function() { if (keyCatcher) keyCatcher.forceActiveFocus() })
+  }
   readonly property var selectedTracks: hostWidget && hostWidget.tracksByDay ? (hostWidget.tracksByDay[selectedKey] || []) : []
   readonly property bool renamingTrack: !!hostWidget && hostWidget.renameTrackId !== ""
 
@@ -233,6 +245,7 @@ Panel {
   function close() {
     setCenterHoverRevealSuppressed(false)
     root.composing = false
+    root.showingSettings = false
     // Dismissing the panel mid-edit would otherwise leave the inputs up,
     // waiting behind a closed popup for the next time it opens.
     if (root.editingLife) root.cancelEditingLife()
@@ -387,7 +400,7 @@ Panel {
     PanelKeyCatcher {
       id: keyCatcher
       anchors.fill: parent
-      blocked: root.editingLife || root.composing || root.renamingTrack
+      blocked: root.editingLife || root.composing || root.renamingTrack || root.showingSettings
       onMoveRequested: function(dx, dy) {
         if (dx !== 0) root.moveMonth(dx)
         if (dy !== 0) root.moveYear(dy)
@@ -403,6 +416,7 @@ Panel {
         else if (t === "t" || t === "T") root.goToToday()
         else if (t === "w" || t === "W") root.toggleWeekStart()
         else if (t === "n" || t === "N") root.newEvent()
+        else if (t === "s" || t === "S") root.openSettings()
         else if (t === "r" || t === "R") root.refreshHey()
         else if (t === "o" || t === "O") root.openSelectedDay()
         else if (t === ",") root.moveSelection(-1)
@@ -983,10 +997,26 @@ Panel {
           //      The new-event form takes this place while it is open.
           Item {
             width: parent.width
-            height: dayColumn.y + dayColumn.implicitHeight + Style.space(6)
+            height: root.showingSettings
+              ? settingsView.y + settingsView.implicitHeight + Style.space(6)
+              : dayColumn.y + dayColumn.implicitHeight + Style.space(6)
+
+            SettingsView {
+              id: settingsView
+              visible: root.showingSettings
+              y: Style.space(12)
+              anchors.horizontalCenter: parent.horizontalCenter
+              width: gridColumn.width
+              panel: root
+              host: root.hostWidget
+              foreground: root.contentForeground
+              fontFamily: root.contentFontFamily
+              onClosed: root.closeSettings()
+            }
 
             Column {
               id: dayColumn
+              visible: !root.showingSettings
               y: Style.space(4)
               anchors.horizontalCenter: parent.horizontalCenter
               width: gridColumn.width
@@ -1076,6 +1106,14 @@ Panel {
                     foreground: root.contentForeground
                     fontFamily: root.contentFontFamily
                     onClicked: root.openSelectedDay()
+                  }
+
+                  PanelActionButton {
+                    iconText: "󰒓"
+                    tooltipText: "Settings (S)"
+                    foreground: root.contentForeground
+                    fontFamily: root.contentFontFamily
+                    onClicked: root.openSettings()
                   }
 
                   PanelActionButton {

@@ -103,10 +103,17 @@ The stock ones all work: arrows, `[` `]` months, `{` `}` years, `T` today,
 | `,` `.` | Previous / next day |
 | `<` `>` | Previous / next week |
 | `N` | New event on the selected day |
+| `S` | Settings |
 | `O` | Open the selected day in HEY |
 | `R` | Refresh from HEY |
 
 ## Settings
+
+The gear button in the panel (or `S`) opens the settings, right under the
+calendar. Omarchy does not draw settings screens for plugin widgets yet, so
+they live there. Tab walks them, arrows pick, Enter applies, Esc goes back.
+Each change is saved to the widget's entry in `~/.config/omarchy/shell.json`
+at once, so it can be edited there too.
 
 | Key | Default | Meaning |
 | --- | --- | --- |
