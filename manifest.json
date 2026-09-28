@@ -1,10 +1,11 @@
 {
   "schemaVersion": 1,
-  "id": "omarchy.clock",
-  "name": "Clock",
-  "version": "1.0.0",
-  "author": "Omarchy",
-  "description": "Date/time label with a calendar popup",
+  "id": "crmne.hey-calendar",
+  "name": "HEY Calendar",
+  "version": "0.1.0",
+  "author": "Carmine Paolino",
+  "license": "MIT",
+  "description": "Omarchy's stock clock and calendar with HEY Calendar laid over it: per-calendar event chips on the month grid, a HEY-style day view, new events, reminders as notifications, and time tracking.",
   "kinds": [
     "bar-widget"
   ],
@@ -12,9 +13,73 @@
     "barWidget": "BarWidget.qml"
   },
   "barWidget": {
-    "displayName": "Clock",
-    "description": "Date/time label with a calendar popup",
+    "displayName": "HEY Calendar",
+    "description": "The stock date/time label and calendar popup, with your HEY calendar in it.",
     "category": "Time",
-    "allowMultiple": false
+    "aliases": [
+      "hey",
+      "calendar",
+      "clock",
+      "events"
+    ],
+    "allowMultiple": false,
+    "defaultSection": "center",
+    "defaults": {
+      "alertLeadMinutes": 15,
+      "notifications": true,
+      "liveSync": true,
+      "timeFormat": "auto",
+      "refreshIntervalSec": 300
+    },
+    "schema": [
+      {
+        "key": "notifications",
+        "type": "boolean",
+        "label": "Show HEY reminders as notifications",
+        "defaultValue": true,
+        "description": "Uses the reminders set on each event in HEY."
+      },
+      {
+        "key": "alertLeadMinutes",
+        "type": "integer",
+        "label": "Show the calendar icon this many minutes ahead",
+        "min": 0,
+        "max": 240,
+        "step": 5,
+        "defaultValue": 15,
+        "description": "The icon appears this long before an event starts and stays until it ends. 0 turns it off."
+      },
+      {
+        "key": "timeFormat",
+        "type": "enum",
+        "label": "Event times",
+        "options": ["auto", "12", "24"],
+        "defaultValue": "auto",
+        "description": "\"auto\" follows the system locale."
+      },
+      {
+        "key": "liveSync",
+        "type": "boolean",
+        "label": "Follow HEY changes live",
+        "defaultValue": true,
+        "description": "Keeps a `hey watch` running so edits made elsewhere show up within seconds."
+      },
+      {
+        "key": "refreshIntervalSec",
+        "type": "integer",
+        "label": "Refresh interval (seconds)",
+        "min": 30,
+        "max": 3600,
+        "step": 30,
+        "defaultValue": 300
+      },
+      {
+        "key": "hiddenCalendars",
+        "type": "string",
+        "label": "Hidden calendars",
+        "defaultValue": "",
+        "description": "Comma-separated calendar names to leave out. Needed on hey-cli 1.3, which cannot see which calendars are switched off in HEY."
+      }
+    ]
   }
 }

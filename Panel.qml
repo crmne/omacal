@@ -3,6 +3,7 @@ import Quickshell
 import qs.Commons
 import qs.Ui
 import "Model.js" as Model
+import "Hey.js" as Hey
 
 // The clock's calendar popup: a month grid with ISO week numbers, built to
 // sit beside the weather panel — same hero-over-detail composition, same
@@ -14,10 +15,17 @@ import "Model.js" as Model
 //
 // BarWidget.qml owns the bar label and hands this panel the button to
 // anchor against.
+//
+// HEY is laid over the stock calendar rather than beside it. Under each day
+// sits a chip per calendar color, carrying how many of that day's events
+// wear it. Clicking a day selects it, and the day view under the grid shows
+// what is on it the way HEY draws a day, with a button to add an event
+// there. BarWidget.qml owns the HEY data, since reminders have to fire with
+// this panel closed.
 Panel {
   id: root
-  moduleName: "omarchy.clock"
-  ipcTarget: "omarchy.clock"
+  moduleName: "crmne.hey-calendar"
+  ipcTarget: "crmne.hey-calendar"
   manageIpc: false
 
   property var anchorItem: null
@@ -72,6 +80,113 @@ Panel {
   readonly property var weekdays: Model.weekdayOrder(weekStart)
   readonly property var weeks: Model.monthGrid(viewYear, viewMonth, weekStart, todayKey)
 
+  // ---- HEY. Everything below reads the host's state; nothing here fetches.
+  readonly property var byDay: hostWidget ? hostWidget.byDay : ({})
+  readonly property bool hour24: hostWidget ? hostWidget.hour24 === true : true
+  // The host's clock ticks every minute, which is what "now" and "past" are
+  // measured against. `today` above only moves at midnight.
+  readonly property real nowMs: hostWidget ? hostWidget.displayDate.getTime() : today.getTime()
+
+  // The day the day view shows. Clicking a cell moves it; the month on
+  // screen does not follow, so the grid never jumps under the pointer.
+  property string selectedKey: todayKey
+  readonly property var selectedEvents: byDay[selectedKey] || []
+  readonly property bool selectedIsToday: selectedKey === todayKey
+  property bool composing: false
+  property string deletingKey: ""
+
+  onWeeksChanged: requestVisibleWeeks()
+  onHostWidgetChanged: requestVisibleWeeks()
+
+  // Every HEY week the grid touches: six rows, and a seventh when the rows
+  // start on Sunday and straddle HEY's Monday weeks.
+  function requestVisibleWeeks() {
+    if (!root.hostWidget || !root.weeks || root.weeks.length === 0) return
+    var first = root.weeks[0].days[0].key
+    var last = root.weeks[root.weeks.length - 1].days[6].key
+    root.hostWidget.showWeeks(Hey.weekKeysBetween(first, last))
+  }
+
+  function selectDay(key) {
+    if (!Hey.isDayKey(key)) return
+    if (root.composing && key !== root.selectedKey) root.composing = false
+    root.selectedKey = key
+  }
+
+  // Steps the selection by days, and the month along with it once the
+  // selection walks off the edge of the one on screen.
+  function moveSelection(delta) {
+    var next = Hey.addDays(root.selectedKey, delta)
+    root.selectDay(next)
+    var date = Hey.dateFromKey(next)
+    if (date.getFullYear() !== root.viewYear || date.getMonth() !== root.viewMonth) {
+      root.viewYear = date.getFullYear()
+      root.viewMonth = date.getMonth()
+    }
+  }
+
+  function newEvent() {
+    if (!root.opened) root.open()
+    root.composing = true
+    Qt.callLater(function() { eventForm.reset() })
+  }
+
+  function cancelComposing() {
+    root.composing = false
+    Qt.callLater(function() { if (keyCatcher) keyCatcher.forceActiveFocus() })
+  }
+
+  function submitEvent(form) {
+    if (!root.hostWidget) return
+    if (Number(form.calendarId) > 0) persistSettings({ lastCalendarId: Number(form.calendarId) })
+    root.hostWidget.addEvent(form)
+  }
+
+  function openSelectedDay() {
+    if (root.hostWidget) root.hostWidget.openUrl(Hey.dayUrl(root.selectedKey))
+  }
+
+  function refreshHey() {
+    if (root.hostWidget) root.hostWidget.refreshHey(true)
+  }
+
+  function activateEvent(event) {
+    if (!root.hostWidget || !event) return
+    root.hostWidget.openUrl(event.joinUrl !== "" ? event.joinUrl : (event.url !== "" ? event.url : Hey.dayUrl(root.selectedKey)))
+  }
+
+  function deleteEvent(event) {
+    if (!root.hostWidget || !event) return
+    root.deletingKey = event.key
+    if (!root.hostWidget.deleteEvent(event, root.selectedKey)) root.deletingKey = ""
+  }
+
+  // "MON 28": HEY's day heading, in English like the rest of the grid.
+  function dayHeading(key) {
+    var date = Hey.dateFromKey(key)
+    return root.weekdayLabel(date.getDay()) + " " + date.getDate()
+  }
+
+  function dayTooltip(dayEvents, key) {
+    var lines = []
+    for (var i = 0; i < dayEvents.length && i < 8; i++) {
+      var event = dayEvents[i]
+      var time = event.allDay ? "All day" : Hey.eventTimeOnDay(event, key, root.hour24)
+      lines.push(time + " · " + event.title)
+    }
+    if (dayEvents.length > 8) lines.push("and " + (dayEvents.length - 8) + " more")
+    return lines.join("\n")
+  }
+
+  Connections {
+    target: root.hostWidget
+    ignoreUnknownSignals: true
+    function onWriteFinished(ok, message) {
+      root.deletingKey = ""
+      if (ok && root.composing) root.cancelComposing()
+    }
+  }
+
 
   // Guarded so the widget renders before the bar is injected (the bar-widget
   // contract instantiates it bare).
@@ -79,7 +194,8 @@ Panel {
   readonly property string contentFontFamily: bar ? bar.fontFamily : Style.font.family
 
   readonly property int cellWidth: Style.space(52)
-  readonly property int cellHeight: Style.space(34)
+  // Taller than stock by the chip row under each number.
+  readonly property int cellHeight: Style.space(48)
   readonly property int cellSpacing: Style.space(2)
   readonly property int weekColumnWidth: Style.space(32)
   readonly property int gutterWidth: Style.space(14)
@@ -99,6 +215,7 @@ Panel {
 
   function close() {
     setCenterHoverRevealSuppressed(false)
+    root.composing = false
     // Dismissing the panel mid-edit would otherwise leave the inputs up,
     // waiting behind a closed popup for the next time it opens.
     if (root.editingLife) root.cancelEditingLife()
@@ -128,11 +245,13 @@ Panel {
   function refresh() {
     root.today = new Date()
     root.goToToday()
+    if (root.hostWidget) root.hostWidget.refreshHey(false)
   }
 
   function goToToday() {
     root.viewYear = today.getFullYear()
     root.viewMonth = today.getMonth()
+    root.selectedKey = root.todayKey
   }
 
   function moveMonth(delta) {
@@ -230,8 +349,10 @@ Panel {
     onDateChanged: {
       if (Model.keyForDate(clock.date) === String(root.todayKey)) return
       var followToday = root.viewingCurrentMonth
+      var followSelection = root.selectedIsToday
       root.today = clock.date
       if (followToday) root.goToToday()
+      else if (followSelection) root.selectedKey = root.todayKey
     }
   }
 
@@ -249,7 +370,7 @@ Panel {
     PanelKeyCatcher {
       id: keyCatcher
       anchors.fill: parent
-      blocked: root.editingLife
+      blocked: root.editingLife || root.composing
       onMoveRequested: function(dx, dy) {
         if (dx !== 0) root.moveMonth(dx)
         if (dy !== 0) root.moveYear(dy)
@@ -264,6 +385,13 @@ Panel {
         else if (t === "}") root.moveYear(1)
         else if (t === "t" || t === "T") root.goToToday()
         else if (t === "w" || t === "W") root.toggleWeekStart()
+        else if (t === "n" || t === "N") root.newEvent()
+        else if (t === "r" || t === "R") root.refreshHey()
+        else if (t === "o" || t === "O") root.openSelectedDay()
+        else if (t === ",") root.moveSelection(-1)
+        else if (t === ".") root.moveSelection(1)
+        else if (t === "<") root.moveSelection(-7)
+        else if (t === ">") root.moveSelection(7)
       }
 
       Flickable {
@@ -658,20 +786,30 @@ Panel {
                     model: modelData.days
 
                     Rectangle {
+                      id: dayCell
                       required property var modelData
+                      readonly property var dayEvents: root.byDay[modelData.key] || []
+                      readonly property var chips: Hey.dayChips(dayEvents, 3)
+                      readonly property bool selected: modelData.key === root.selectedKey
 
                       width: root.cellWidth
                       height: root.cellHeight
                       radius: Style.cornerRadius
                       // Today is outlined, not filled: a lit-up block shouts
-                      // over a grid this quiet.
-                      color: "transparent"
+                      // over a grid this quiet. The selected day takes a soft
+                      // fill instead, so picking a day never outshouts today.
+                      color: selected
+                        ? Style.selectionFillFor(root.contentForeground, Color.accent)
+                        : (cellMouse.containsMouse ? Style.hoverFillFor(root.contentForeground, Color.accent) : "transparent")
                       border.width: modelData.today ? Style.spacing.hairline : 0
                       border.color: Style.normalBorderFor(root.contentForeground, Color.accent)
 
                       Text {
                         textFormat: Text.PlainText
-                        anchors.centerIn: parent
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        // The number sits where it always does, chips or
+                        // not, so a row reads as one line of dates.
+                        y: Style.space(5)
                         text: modelData.day
                         color: modelData.inMonth
                           ? (modelData.weekend ? Qt.darker(root.contentForeground, 1.45) : root.contentForeground)
@@ -679,6 +817,60 @@ Panel {
                         font.family: root.contentFontFamily
                         font.pixelSize: Style.font.body
                         font.bold: modelData.today
+                      }
+
+                      // One chip per calendar color, with the count of that
+                      // day's events in it. Dimmed outside the month, the
+                      // same way the numbers are.
+                      Row {
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        anchors.bottom: parent.bottom
+                        anchors.bottomMargin: Style.space(5)
+                        spacing: Style.space(2)
+                        opacity: modelData.inMonth ? 1 : 0.4
+
+                        Repeater {
+                          model: dayCell.chips
+
+                          Rectangle {
+                            required property var modelData
+                            height: Style.space(14)
+                            width: Math.max(height, chipText.implicitWidth + Style.space(6))
+                            radius: Math.max(3, Math.round(height / 3.5))
+                            color: modelData.overflow
+                              ? Qt.rgba(root.contentForeground.r, root.contentForeground.g, root.contentForeground.b, 0.28)
+                              : Hey.calendarColor(modelData.color, Color.accent)
+
+                            Text {
+                              id: chipText
+                              anchors.centerIn: parent
+                              textFormat: Text.PlainText
+                              text: modelData.overflow ? "+" + modelData.count : modelData.count
+                              color: modelData.overflow ? root.contentForeground : Hey.calendarInk
+                              font.family: root.contentFontFamily
+                              font.pixelSize: Math.max(8, Style.font.caption - 1)
+                              font.bold: true
+                            }
+                          }
+                        }
+                      }
+
+                      MouseArea {
+                        id: cellMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: root.selectDay(modelData.key)
+                        onDoubleClicked: {
+                          root.selectDay(modelData.key)
+                          root.newEvent()
+                        }
+                      }
+
+                      PanelToolTip {
+                        visible: cellMouse.containsMouse && dayCell.dayEvents.length > 0
+                        text: root.dayTooltip(dayCell.dayEvents, modelData.key)
+                        fontFamily: root.contentFontFamily
                       }
                     }
                   }
@@ -752,6 +944,233 @@ Panel {
                 foreground: root.contentForeground
                 fontFamily: root.contentFontFamily
                 onClicked: root.moveMonth(1)
+              }
+            }
+          }
+
+          // ---- The selected day, as HEY draws one: its heading (today in
+          //      HEY's orange), the all-day pills, then a block per event.
+          //      The new-event form takes this place while it is open.
+          Item {
+            width: parent.width
+            height: dayColumn.y + dayColumn.implicitHeight + Style.space(6)
+
+            Column {
+              id: dayColumn
+              y: Style.space(4)
+              anchors.horizontalCenter: parent.horizontalCenter
+              width: gridColumn.width
+              spacing: Style.space(8)
+
+              Rectangle {
+                width: parent.width
+                height: Style.spacing.hairline
+                color: root.contentForeground
+                opacity: 0.1
+              }
+
+              Item {
+                width: parent.width
+                height: Math.max(dayPill.height, dayActions.height)
+
+                Rectangle {
+                  id: dayPill
+                  anchors.left: parent.left
+                  anchors.verticalCenter: parent.verticalCenter
+                  width: dayPillText.implicitWidth + Style.space(18)
+                  height: dayPillText.implicitHeight + Style.space(6)
+                  radius: height / 2
+                  color: root.selectedIsToday ? Hey.todayColor : "transparent"
+
+                  Text {
+                    id: dayPillText
+                    anchors.centerIn: parent
+                    textFormat: Text.PlainText
+                    text: root.dayHeading(root.selectedKey)
+                    color: root.selectedIsToday ? Hey.calendarInk : root.contentForeground
+                    font.family: root.contentFontFamily
+                    font.pixelSize: Style.font.subtitle
+                    font.bold: true
+                    font.letterSpacing: 0.5
+                  }
+                }
+
+                Text {
+                  anchors.left: dayPill.right
+                  anchors.leftMargin: Style.space(8)
+                  anchors.verticalCenter: parent.verticalCenter
+                  textFormat: Text.PlainText
+                  text: {
+                    var label = Hey.relativeDayLabel(root.selectedKey, root.todayKey)
+                    var date = Hey.dateFromKey(root.selectedKey)
+                    return root.selectedIsToday ? label : label + " · " + Qt.formatDate(date, "d MMMM")
+                  }
+                  color: Qt.darker(root.contentForeground, 1.5)
+                  font.family: root.contentFontFamily
+                  font.pixelSize: Style.font.bodySmall
+                }
+
+                Row {
+                  id: dayActions
+                  anchors.right: parent.right
+                  anchors.rightMargin: -Style.space(8)
+                  anchors.verticalCenter: parent.verticalCenter
+
+                  PanelActionButton {
+                    iconText: "󰐕"
+                    tooltipText: "New event (N)"
+                    enabled: !!root.hostWidget && root.hostWidget.cliMode !== ""
+                    foreground: root.contentForeground
+                    fontFamily: root.contentFontFamily
+                    onClicked: root.newEvent()
+                  }
+
+                  PanelActionButton {
+                    iconText: "󰏌"
+                    tooltipText: "Open this day in HEY (O)"
+                    foreground: root.contentForeground
+                    fontFamily: root.contentFontFamily
+                    onClicked: root.openSelectedDay()
+                  }
+
+                  PanelActionButton {
+                    iconText: "󰑐"
+                    tooltipText: root.hostWidget && root.hostWidget.loading ? "Reading HEY…" : "Refresh from HEY (R)"
+                    foreground: root.contentForeground
+                    fontFamily: root.contentFontFamily
+                    opacity: root.hostWidget && root.hostWidget.loading ? 0.45 : 1
+                    onClicked: root.refreshHey()
+                  }
+                }
+              }
+
+              EventForm {
+                id: eventForm
+                visible: root.composing
+                width: parent.width
+                dayKey: root.selectedKey
+                calendars: root.hostWidget ? root.hostWidget.writableCalendars : []
+                defaultCalendarId: Number(root.setting("lastCalendarId", 0)) || 0
+                busy: !!root.hostWidget && root.hostWidget.writing
+                error: root.hostWidget ? root.hostWidget.writeError : ""
+                foreground: root.contentForeground
+                fontFamily: root.contentFontFamily
+                onSubmitted: function(form) { root.submitEvent(form) }
+                onCanceled: root.cancelComposing()
+              }
+
+              Column {
+                visible: !root.composing
+                width: parent.width
+                spacing: Style.space(4)
+
+                Repeater {
+                  model: root.selectedEvents
+
+                  EventCard {
+                    required property var modelData
+                    width: parent.width
+                    event: modelData
+                    dayKey: root.selectedKey
+                    hour24: root.hour24
+                    nowMs: root.nowMs
+                    foreground: root.contentForeground
+                    fontFamily: root.contentFontFamily
+                    busy: root.deletingKey === modelData.key
+                    onActivated: root.activateEvent(modelData)
+                    onDeleteRequested: root.deleteEvent(modelData)
+                  }
+                }
+
+                // What an empty day means depends on whether HEY answered.
+                Text {
+                  visible: root.selectedEvents.length === 0 || (root.hostWidget && root.hostWidget.lastError !== "")
+                  width: parent.width
+                  topPadding: Style.space(4)
+                  bottomPadding: Style.space(4)
+                  textFormat: Text.PlainText
+                  wrapMode: Text.Wrap
+                  text: {
+                    var host = root.hostWidget
+                    if (!host) return ""
+                    if (host.lastError !== "") return host.lastError
+                    if (!host.loaded) return "Reading HEY…"
+                    return root.selectedIsToday ? "Nothing on today." : "Nothing on this day."
+                  }
+                  color: root.hostWidget && root.hostWidget.lastError !== ""
+                    ? Color.urgent
+                    : Qt.darker(root.contentForeground, 1.6)
+                  font.family: root.contentFontFamily
+                  font.pixelSize: Style.font.bodySmall
+                }
+
+                Text {
+                  visible: root.hostWidget && root.hostWidget.writeError !== "" && !root.composing
+                  width: parent.width
+                  textFormat: Text.PlainText
+                  wrapMode: Text.Wrap
+                  text: root.hostWidget ? root.hostWidget.writeError : ""
+                  color: Color.urgent
+                  font.family: root.contentFontFamily
+                  font.pixelSize: Style.font.bodySmall
+                }
+              }
+
+              // ---- HEY's time tracking, on today: one tap to start, one to
+              //      stop, and how long it has been running.
+              Item {
+                visible: root.selectedIsToday && !root.composing && !!root.hostWidget && root.hostWidget.cliMode !== ""
+                width: parent.width
+                height: visible ? trackButton.implicitHeight : 0
+
+                readonly property var track: root.hostWidget ? root.hostWidget.timeTrack : null
+
+                Text {
+                  id: trackIcon
+                  anchors.left: parent.left
+                  anchors.verticalCenter: parent.verticalCenter
+                  text: "󱎫"
+                  color: parent.track ? Color.urgent : Qt.darker(root.contentForeground, 1.6)
+                  font.family: root.contentFontFamily
+                  font.pixelSize: Style.font.icon
+                }
+
+                Text {
+                  anchors.left: trackIcon.right
+                  anchors.leftMargin: Style.space(8)
+                  anchors.right: trackButton.left
+                  anchors.rightMargin: Style.space(8)
+                  anchors.verticalCenter: parent.verticalCenter
+                  textFormat: Text.PlainText
+                  elide: Text.ElideRight
+                  text: {
+                    var track = parent.track
+                    if (!track) return "Not tracking time"
+                    var since = Hey.formatTime(new Date(track.startMs), root.hour24)
+                    return "Tracking " + Hey.durationLabel(root.nowMs - track.startMs)
+                      + " · since " + since + (track.title !== "" ? " · " + track.title : "")
+                  }
+                  color: parent.track ? root.contentForeground : Qt.darker(root.contentForeground, 1.6)
+                  font.family: root.contentFontFamily
+                  font.pixelSize: Style.font.bodySmall
+                }
+
+                Button {
+                  id: trackButton
+                  anchors.right: parent.right
+                  anchors.verticalCenter: parent.verticalCenter
+                  text: parent.track ? "Stop" : "Start"
+                  iconText: parent.track ? "󰓛" : "󰐊"
+                  bordered: true
+                  enabled: !!root.hostWidget && !root.hostWidget.writing
+                  foreground: root.contentForeground
+                  fontFamily: root.contentFontFamily
+                  fontSize: Style.font.bodySmall
+                  onClicked: {
+                    if (parent.track) root.hostWidget.stopTimeTrack()
+                    else root.hostWidget.startTimeTrack()
+                  }
+                }
               }
             }
           }
