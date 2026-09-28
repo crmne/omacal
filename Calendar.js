@@ -1,213 +1,41 @@
-// HEY data, date math and command lines for the calendar panel.
+// OmaCal's calendar model: every piece of date, event and bar math, and
+// nothing about any one calendar service.
 //
 // Model.js is Omarchy's own clock model and stays byte-for-byte stock, so a
-// newer Omarchy can be dropped in over it. Everything HEY knows lives here
-// instead. Like Model.js it is Qt-free, so it runs under plain node
-// (tests/run); the QML owns every pixel and every process.
+// newer Omarchy can be dropped in over it. Where events come from is a
+// backend's business (backends/*.js). Like Model.js this is Qt-free, so it
+// runs under plain node (tests/run); the QML owns every pixel and process.
+//
+// ---- Backends
+//
+// A backend is a file of command lines, and every command prints one of
+// these standard shapes, so this file is the only one that parses:
+//
+//   Events, one JSON line per week or span:
+//     {"week": "YYYY-MM-DD", "events": [event...]}       a Monday-named week
+//     {"week": "YYYY-MM-DD", "error": true}               that week failed
+//     {"list": true, "first": KEY, "last": KEY, "events": [event...]}
+//       a whole span, with repeating series given once, to be unrolled
+//     {"list": true, "first": KEY, "last": KEY, "error": true}
+//   where an event is { id, title, all_day, starts_at, ends_at (ISO 8601),
+//     calendar, color (a name or #hex), calendar_id, location, url,
+//     join_url, join_title, status, reminders: [ISO 8601...], recurring,
+//     occurrence_id, repeat_kind, repeat_description }; only id, title and
+//     starts_at are required.
+//
+//   Calendars: [{ id, name, color, kind, owned }]
+//   Time tracks: [{ id, name, named, notes, starts_at, ends_at }]
+//   The track under way: { ok: true, track: { id, name, starts_at } | null }
+//
+// Writes are argv commands built from validateEvent's checked request.
 
 var MS_PER_DAY = 86400000
 
-// ---------------------------------------------------------------------------
-// HEY CLI
-// ---------------------------------------------------------------------------
-
-// Projects `hey event week --json` down to what the panel draws. Everything
-// is defaulted here so a missing field is an empty string rather than a
-// `null` that every binding has to guard against.
-var eventProjection = "map({"
-  + "id: .id,"
-  + " occurrence_id: (.occurrence_id // \"\"),"
-  + " parent_id: (.parent_id // \"\"),"
-  + " recurring: (((.recurrence_schedule // {}) | length) > 0 or .parent_id != null),"
-  + " title: (.title // .summary // \"(untitled)\"),"
-  + " all_day: (.all_day // false),"
-  + " starts_at: (.starts_at // \"\"),"
-  + " ends_at: (.ends_at // \"\"),"
-  + " location: (.location // \"\"),"
-  + " calendar_id: (.calendar.id // 0),"
-  + " calendar: (.calendar.name // \"Personal\"),"
-  + " color: (.calendar.color // \"\"),"
-  + " join_url: (.join_link.url // \"\"),"
-  + " join_title: (.join_link.title // \"\"),"
-  + " url: (.edit_url // \"\"),"
-  + " status: (.attendance_status // \"\"),"
-  + " reminders: [(.reminders // [])[] | .remind_at // empty],"
-  + " repeat_kind: ((.recurrence_schedule // {}).kind // \"\"),"
-  + " repeat_description: ((.recurrence_schedule // {}).description // \"\")"
-  + "})"
-
-var cliTimeoutSeconds = 20
-var cliKillGraceSeconds = 3
 var cliOutputByteLimit = 4 * 1024 * 1024
 var maximumEventCount = 2000
-var maximumWeeksPerFetch = 8
-
-// Every week of the range is fetched at once and in parallel: six `hey event
-// week` calls side by side take about as long as one. Each writes its own
-// file, so a large week can never interleave with another on the pipe, and
-// the results come back one JSON line per week, in the order asked for.
-//
-// A week that failed is reported as failed rather than as empty. An empty
-// answer is the shape every failure takes with the CLI (missing, signed out,
-// offline), and drawing it as a clear week would be a lie.
-//
-// `timeout` bounds a CLI that never answers and `head -c` one that answers
-// forever. The filter and the dates are arguments, never interpolated.
-var rangeScript = [
-  "dir=$(mktemp -d) || exit 1",
-  "trap 'rm -rf \"$dir\"' EXIT",
-  "filter=$1; shift",
-  "for d in \"$@\"; do",
-  "  (timeout -k " + cliKillGraceSeconds + " " + cliTimeoutSeconds
-    + " hey event week \"$d\" --json --all > \"$dir/$d\" 2>/dev/null) &",
-  "done",
-  "wait",
-  "for d in \"$@\"; do",
-  "  if jq -e '.ok == true' \"$dir/$d\" >/dev/null 2>&1; then",
-  "    jq -c --arg w \"$d\" \"{week: \\$w, events: (.data | $filter)}\" \"$dir/$d\" 2>/dev/null"
-    + " || printf '{\"week\":\"%s\",\"error\":true}\\n' \"$d\"",
-  "  else",
-  "    printf '{\"week\":\"%s\",\"error\":true}\\n' \"$d\"",
-  "  fi",
-  "done | head -c " + (cliOutputByteLimit + 1)
-].join("\n")
 
 function isDayKey(value) {
   return /^\d{4}-\d{2}-\d{2}$/.test(String(value || ""))
-}
-
-// ---- CLI versions
-//
-// Omarchy packages hey-cli 1.3.0, and that is the floor. 1.4.0 added `hey
-// event week`, HEY's own expansion of a week with every repeating series
-// unrolled, which is exact and preferred. On 1.3.0 the plugin reads the
-// same span with `hey event list`, which returns each series once, and
-// unrolls the repeats itself (see expandRecurring).
-var minimumCliVersion = [1, 3, 0]
-var weekViewCliVersion = [1, 4, 0]
-
-var versionCommand = ["bash", "-c", "timeout 5 hey --version 2>/dev/null | head -c 200", "hey-calendar"]
-
-// "hey version 1.7.0" → [1, 7, 0], or null.
-function parseCliVersion(raw) {
-  var match = /(\d+)\.(\d+)\.(\d+)/.exec(String(raw || ""))
-  if (!match) return null
-  return [parseInt(match[1], 10), parseInt(match[2], 10), parseInt(match[3], 10)]
-}
-
-function compareVersions(a, b) {
-  for (var i = 0; i < 3; i++) if (a[i] !== b[i]) return a[i] < b[i] ? -1 : 1
-  return 0
-}
-
-// "week" (1.4.0 and newer), "list" (1.3.x), or "" when the CLI is missing
-// or too old. A version that cannot be read (a development build, say) is
-// taken to be new: guessing old would hide what `hey event week` knows.
-function cliMode(versionOutput) {
-  var text = String(versionOutput || "").replace(/^\s+|\s+$/g, "")
-  if (text === "") return ""
-  var version = parseCliVersion(text)
-  if (version === null) return "week"
-  if (compareVersions(version, minimumCliVersion) < 0) return ""
-  return compareVersions(version, weekViewCliVersion) < 0 ? "list" : "week"
-}
-
-function formatVersion(version) {
-  return version ? version.join(".") : ""
-}
-
-// 1.3.x: one `hey event list` over the whole span, as a single
-// { list, first, last, events } line. parseRangeOutput unrolls it into the
-// same per-week shape `hey event week` produces.
-var listScript = "timeout -k " + cliKillGraceSeconds + " " + cliTimeoutSeconds
-  + " hey event list --starts-on \"$4\" --ends-on \"$5\" --json --all 2>/dev/null"
-  + " | jq -c --arg a \"$2\" --arg b \"$3\" \"if .ok == true then {list: true, first: \\$a, last: \\$b, events: (.data | $1)}"
-  + " else {list: true, first: \\$a, last: \\$b, error: true} end\" 2>/dev/null"
-  + " | head -c " + (cliOutputByteLimit + 1)
-
-function listCommand(weekKeys) {
-  var keys = []
-  var list = Array.isArray(weekKeys) ? weekKeys : []
-  for (var i = 0; i < list.length; i++) if (isDayKey(list[i])) keys.push(list[i])
-  if (keys.length === 0) return []
-  keys.sort()
-  var first = keys[0]
-  var last = addDays(keys[keys.length - 1], 6)
-  // `hey event list` draws its window in UTC, so an evening event on the
-  // last day east of Greenwich would fall off the end. A day either side is
-  // asked for, and expandAll trims back to the span.
-  return ["bash", "-c", listScript, "hey-calendar", eventProjection, first, last,
-    addDays(first, -1), addDays(last, 1)]
-}
-
-function fetchCommand(mode, weekKeys) {
-  return mode === "list" ? listCommand(weekKeys) : rangeCommand(weekKeys)
-}
-
-function rangeCommand(weekKeys) {
-  var keys = []
-  var list = Array.isArray(weekKeys) ? weekKeys : []
-  for (var i = 0; i < list.length && keys.length < maximumWeeksPerFetch; i++)
-    if (isDayKey(list[i]) && keys.indexOf(list[i]) === -1) keys.push(list[i])
-  return ["bash", "-c", rangeScript, "hey-calendar", eventProjection].concat(keys)
-}
-
-// Named calendars only. The unnamed personal calendar holds todos, habits
-// and the journal rather than events, and HEY's own form never offers it.
-var calendarsCommand = ["bash", "-c",
-  "timeout -k 3 20 hey calendar list --json 2>/dev/null"
-  + " | jq -c '[.data[] | select(.name != null and .name != \"\")"
-  + " | {id, name, color: (.color // \"\"), kind: (.kind // \"\"), owned: (.owned // false)}]'"
-  + " | head -c 262144",
-  "hey-calendar"]
-
-var timeTrackCommand = ["bash", "-c",
-  "timeout -k 3 20 hey timetrack current --json 2>/dev/null | head -c 65536",
-  "hey-calendar"]
-
-// Calendar changes as HEY makes them, one JSON line each. Mail is left out:
-// naming only calendar changes switches the mail side of the watch off.
-var watchCommand = ["hey", "watch", "--events",
-  "recording_added,recording_updated,recording_deleted,calendar_added,calendar_updated,calendar_deleted,calendar_resync"]
-
-// Finished time tracks, newest first. `hey timetrack list` has no date
-// window, so the newest few hundred are read and filed by day here; that
-// covers the weeks anyone browses.
-var timeTracksCommand = ["bash", "-c",
-  "timeout -k 3 20 hey timetrack list --json --limit 300 2>/dev/null"
-  + " | jq -c '[.data[] | {id, title: (.title // \"\"), category: (.category // \"\"),"
-  + " notes: (.notes // \"\"), starts_at: (.starts_at // \"\"), ends_at: (.ends_at // \"\")}]'"
-  + " | head -c 1048576",
-  "hey-calendar"]
-
-// HEY names a track by its category: editing one "files the track under a
-// category title, which HEY creates if it has none by that title".
-function timeTrackRenameCommand(id, name) {
-  var trackId = String(id || "")
-  var title = String(name || "").replace(/^\s+|\s+$/g, "")
-  if (!/^\d+$/.test(trackId) || title === "") return []
-  return ["timeout", "-k", "3", "20", "hey", "timetrack", "edit", trackId, "--category", title.substr(0, 128), "--json"]
-}
-
-function timeTrackDeleteCommand(id) {
-  var trackId = String(id || "")
-  if (!/^\d+$/.test(trackId)) return []
-  return ["timeout", "-k", "3", "20", "hey", "timetrack", "delete", trackId, "--json"]
-}
-
-function timeTrackStartCommand() {
-  return ["timeout", "-k", "3", "20", "hey", "timetrack", "start", "--json"]
-}
-
-function timeTrackStopCommand() {
-  return ["timeout", "-k", "3", "20", "hey", "timetrack", "stop", "--json"]
-}
-
-function deleteCommand(event) {
-  if (!event || event.recurring) return []
-  var id = String(event.seriesId || "")
-  if (!/^\d+$/.test(id)) return []
-  return ["timeout", "-k", "3", "20", "hey", "event", "delete", id, "--json"]
 }
 
 // ---------------------------------------------------------------------------
@@ -368,9 +196,9 @@ function writableCalendars(calendars) {
   return normal.concat(maybe)
 }
 
-// `hey timetrack current --json`: the track under way, or null when there is
-// none. `undefined` means the answer itself was unusable.
-function parseTimeTrack(raw) {
+// The track under way, from its standard shape: the track, null when
+// nothing is running, or undefined when the answer was unusable.
+function parseCurrentTrack(raw) {
   var text = String(raw === undefined || raw === null ? "" : raw).replace(/^\s+|\s+$/g, "")
   if (text === "") return undefined
   var parsed
@@ -380,13 +208,13 @@ function parseTimeTrack(raw) {
     return undefined
   }
   if (!parsed || parsed.ok !== true) return undefined
-  var data = parsed.data
-  if (!data || typeof data !== "object") return null
-  var startMs = parseInstant(data.starts_at)
+  var track = parsed.track
+  if (!track || typeof track !== "object") return null
+  var startMs = parseInstant(track.starts_at)
   if (startMs === null) return null
   return {
-    id: boundedString(data.id, 32),
-    title: boundedString(data.category, 128) || boundedString(data.title, 256),
+    id: boundedString(track.id, 32),
+    title: boundedString(track.name, 256),
     startMs: startMs
   }
 }
@@ -398,15 +226,11 @@ function normalizeTimeTrack(raw) {
   var startMs = parseInstant(raw.starts_at)
   var endMs = parseInstant(raw.ends_at)
   if (startMs === null) return null
-  var category = boundedString(raw.category, 128)
-  var title = boundedString(raw.title, 256)
   return {
     key: "track:" + boundedString(raw.id, 32),
     id: boundedString(raw.id, 32),
-    category: category,
-    // "Time Track" is what HEY calls one nobody named.
-    name: category || title || "Time Track",
-    named: category !== "",
+    name: boundedString(raw.name, 256) || "Time track",
+    named: raw.named === true,
     notes: boundedString(raw.notes, 1024),
     allDay: false,
     startMs: startMs,
@@ -468,11 +292,11 @@ function newestTrackSince(tracks, sinceMs) {
 }
 
 // ---------------------------------------------------------------------------
-// Repeats, for hey-cli 1.3.x
+// Repeats, for backends that list a series once
 // ---------------------------------------------------------------------------
 
-// `hey event list` answers with each series once, on the day it began, and
-// with only the name of its schedule. These are HEY's presets, which is
+// A span line lists each series once, on the day it began, with only the
+// name of its schedule (hey-cli 1.3's `hey event list` answers this way). These are HEY's presets, which is
 // what its own form creates. A custom schedule ("rrule") is opaque except
 // for its description; the common yearly one is recognised from that, and
 // anything else shows on its first day only.
@@ -639,9 +463,9 @@ function mergeWeeks(cache) {
   return out
 }
 
-// Calendars named in the `hiddenCalendars` setting are left out. On hey-cli
-// 1.4.0 and newer HEY already leaves out the calendars switched off in its
-// own app; 1.3.x cannot tell, so this is how to hide one there.
+// Calendars named in the `hiddenCalendars` setting are left out, whatever
+// the backend. Some backends already leave out what is switched off in
+// their own app; for the rest, this is how to hide a calendar.
 function parseHiddenCalendars(value) {
   var list = Array.isArray(value) ? value : String(value || "").split(",")
   var out = []
@@ -696,15 +520,15 @@ function daysBetween(fromKey, toKey) {
     - Date.UTC(a.getFullYear(), a.getMonth(), a.getDate())) / MS_PER_DAY)
 }
 
-// HEY's weeks run Monday to Sunday, and `hey event week` answers that span
-// whatever day it is given, so a Monday is the canonical name for a week.
+// Weeks run Monday to Sunday, as HEY draws them, and a Monday is the
+// canonical name for a week in the event lines backends print.
 function weekStartKey(dayKey) {
   var date = dateFromKey(dayKey)
   var weekday = (date.getDay() + 6) % 7
   return addDays(dayKey, -weekday)
 }
 
-// Every HEY week touching the span, first to last inclusive.
+// Every week touching the span, first to last inclusive.
 function weekKeysBetween(firstKey, lastKey) {
   var keys = []
   if (!isDayKey(firstKey) || !isDayKey(lastKey) || lastKey < firstKey) return keys
@@ -1108,14 +932,16 @@ function notificationBody(event, nowMs, hour24) {
 // the answer, which is why this runs detached. The text and the link are
 // arguments, never interpolated.
 var notifyScript = [
-  "choice=$(notify-send --app-name='HEY Calendar' --icon=x-office-calendar"
+  "choice=$(notify-send --app-name='OmaCal' --icon=x-office-calendar"
     + " --action=default=Open \"$1\" \"$2\" 2>/dev/null)",
   "if [ \"$choice\" = default ] && [ -n \"$3\" ]; then xdg-open \"$3\" >/dev/null 2>&1; fi"
 ].join("\n")
 
-function notifyCommand(event, nowMs, hour24) {
-  var link = event.joinUrl || event.url || dayUrl(eventDayKeys(event)[0] || "")
-  return ["bash", "-c", notifyScript, "hey-calendar",
+// `fallbackLink` is where a click goes when the event has no link of its
+// own: the backend's page for its day, if it has one.
+function notifyCommand(event, nowMs, hour24, fallbackLink) {
+  var link = event.joinUrl || event.url || safeUrl(fallbackLink)
+  return ["bash", "-c", notifyScript, "omacal",
     event.title, notificationBody(event, nowMs, hour24), link]
 }
 
@@ -1266,52 +1092,45 @@ function suggestedStart(dayKey, now) {
 
 var reminderChoices = ["", "10m", "30m", "1h", "1d"]
 
-// Checks the form and turns it into `hey event add` arguments. Returns
-// { error } or { command }. Nothing here is interpolated into a shell: the
-// command is an argv, so a title can hold any character it likes.
-function addEventCommand(form) {
+// Checks the new-event form and turns it into the request a backend's
+// createCommand takes: { title, date, allDay, startTime, endTime, endDate,
+// calendarId, location, remind }, times as HH:MM, the end date worked out.
+// Returns { error } or { request }.
+function validateEvent(form) {
   var f = form || {}
   var title = String(f.title || "").replace(/^\s+|\s+$/g, "")
   if (title === "") return { error: "Give the event a title." }
   if (title.length > 256) return { error: "That title is too long." }
   if (!isDayKey(f.date)) return { error: "Pick a day." }
 
-  var args = ["timeout", "-k", "3", "30", "hey", "event", "add", "--title", title, "--starts-on", f.date]
+  var request = { title: title, date: f.date, allDay: f.allDay === true, startTime: "", endTime: "",
+    endDate: f.date, calendarId: Number(f.calendarId) > 0 ? Math.round(Number(f.calendarId)) : 0,
+    location: String(f.location || "").replace(/^\s+|\s+$/g, "").substr(0, 256), remind: "" }
 
-  if (f.allDay) {
-    args.push("--all-day")
+  if (request.allDay) {
     if (f.endDate && f.endDate !== f.date) {
       if (!isDayKey(f.endDate) || f.endDate < f.date) return { error: "It has to end after it starts." }
-      args.push("--ends-on", f.endDate)
+      request.endDate = f.endDate
     }
   } else {
     var start = parseClock(f.startTime)
     if (start === "") return { error: "The start time is not a time." }
-    args.push("--start-time", start)
+    request.startTime = start
     var endText = String(f.endTime || "").replace(/\s+/g, "")
     if (endText !== "") {
       var end = parseClock(endText)
       if (end === "") return { error: "The end time is not a time." }
+      if (clockMinutes(end) === clockMinutes(start)) return { error: "It has to end after it starts." }
       // An end before the start is read as the next morning, the way you
       // mean "22:00 to 01:00".
-      if (clockMinutes(end) <= clockMinutes(start)) {
-        if (clockMinutes(end) === clockMinutes(start)) return { error: "It has to end after it starts." }
-        args.push("--ends-on", addDays(f.date, 1))
-      }
-      args.push("--end-time", end)
+      if (clockMinutes(end) < clockMinutes(start)) request.endDate = addDays(f.date, 1)
+      request.endTime = end
     }
   }
 
-  if (Number(f.calendarId) > 0) args.push("--calendar", String(Math.round(Number(f.calendarId))))
-
-  var location = String(f.location || "").replace(/^\s+|\s+$/g, "")
-  if (location !== "") args.push("--location", location.substr(0, 256))
-
   var remind = String(f.remind || "")
-  if (remind !== "" && reminderChoices.indexOf(remind) !== -1) args.push("--remind", remind)
-
-  args.push("--json")
-  return { command: args }
+  if (remind !== "" && reminderChoices.indexOf(remind) !== -1) request.remind = remind
+  return { request: request }
 }
 
 // ---------------------------------------------------------------------------
@@ -1379,12 +1198,8 @@ function calendarLabel(name) {
   return text.length > 22 ? text.substr(0, 21) + "…" : text
 }
 
-function dayUrl(dayKey) {
-  return isDayKey(dayKey) ? "https://app.hey.com/calendar/days/" + dayKey : "https://app.hey.com/calendar"
-}
-
 // ---------------------------------------------------------------------------
-// HEY's palette
+// Colors, in HEY's palette
 // ---------------------------------------------------------------------------
 
 // HEY names its calendar colors rather than giving hex. These are the fills
@@ -1410,54 +1225,40 @@ var calendarInk = "#1b2632"
 // HEY's "today" marker: the warm orange blob behind the day's name.
 var todayColor = "#fcb55b"
 
-// Anything HEY adds later falls through to the caller's accent, so a
-// calendar the plugin has never heard of is never invisible.
+// Other services give colors as hex, which pass through as they are.
+// Anything else falls through to the caller's accent, so a calendar the
+// plugin has never heard of is never invisible.
 function calendarColor(name, fallback) {
   var key = String(name || "").toLowerCase().replace(/^\s+|\s+$/g, "")
+  if (/^#[0-9a-f]{6}$/.test(key)) return key
   return calendarPalette[key] || fallback
 }
 
 if (typeof module !== "undefined") {
   module.exports = {
-    eventProjection: eventProjection,
-    rangeCommand: rangeCommand,
-    listCommand: listCommand,
-    fetchCommand: fetchCommand,
-    versionCommand: versionCommand,
-    parseCliVersion: parseCliVersion,
-    cliMode: cliMode,
-    formatVersion: formatVersion,
-    minimumCliVersion: minimumCliVersion,
-    repeatUntil: repeatUntil,
-    repeatTimes: repeatTimes,
-    expandRecurring: expandRecurring,
-    expandAll: expandAll,
-    bucketByWeek: bucketByWeek,
-    calendarsCommand: calendarsCommand,
-    timeTrackCommand: timeTrackCommand,
-    watchCommand: watchCommand,
-    timeTracksCommand: timeTracksCommand,
-    timeTrackRenameCommand: timeTrackRenameCommand,
-    timeTrackDeleteCommand: timeTrackDeleteCommand,
-    normalizeTimeTrack: normalizeTimeTrack,
-    parseTimeTracks: parseTimeTracks,
-    tracksByDay: tracksByDay,
-    trackedOnDay: trackedOnDay,
-    newestTrackSince: newestTrackSince,
-    timeTrackStartCommand: timeTrackStartCommand,
-    timeTrackStopCommand: timeTrackStopCommand,
-    deleteCommand: deleteCommand,
+    isDayKey: isDayKey,
+    boundedString: boundedString,
     safeUrl: safeUrl,
+    parseInstant: parseInstant,
     normalizeEvent: normalizeEvent,
     normalizeEvents: normalizeEvents,
     parseRangeOutput: parseRangeOutput,
     parseCalendars: parseCalendars,
     writableCalendars: writableCalendars,
-    parseTimeTrack: parseTimeTrack,
+    parseCurrentTrack: parseCurrentTrack,
+    normalizeTimeTrack: normalizeTimeTrack,
+    parseTimeTracks: parseTimeTracks,
+    tracksByDay: tracksByDay,
+    trackedOnDay: trackedOnDay,
+    newestTrackSince: newestTrackSince,
+    repeatUntil: repeatUntil,
+    repeatTimes: repeatTimes,
+    expandRecurring: expandRecurring,
+    expandAll: expandAll,
+    bucketByWeek: bucketByWeek,
     mergeWeeks: mergeWeeks,
     parseHiddenCalendars: parseHiddenCalendars,
     withoutHidden: withoutHidden,
-    isDayKey: isDayKey,
     dateKey: dateKey,
     keyForDate: keyForDate,
     dateFromKey: dateFromKey,
@@ -1477,13 +1278,13 @@ if (typeof module !== "undefined") {
     currentOrNextEvent: currentOrNextEvent,
     normalizedAlertLead: normalizedAlertLead,
     imminentEvent: imminentEvent,
-    minutesUntil: minutesUntil,
     barWhen: barWhen,
     barEventLabel: barEventLabel,
     barWindowStart: barWindowStart,
     barEvents: barEvents,
     barSelection: barSelection,
     barLabel: barLabel,
+    minutesUntil: minutesUntil,
     normalizedRefreshInterval: normalizedRefreshInterval,
     reminderKey: reminderKey,
     dueReminders: dueReminders,
@@ -1496,18 +1297,17 @@ if (typeof module !== "undefined") {
     shiftClock: shiftClock,
     cycle: cycle,
     suggestedStart: suggestedStart,
-    reminderChoices: reminderChoices,
-    addEventCommand: addEventCommand,
+    validateEvent: validateEvent,
     formatTime: formatTime,
     eventRangeLabel: eventRangeLabel,
     eventTimeOnDay: eventTimeOnDay,
     durationLabel: durationLabel,
     relativeDayLabel: relativeDayLabel,
     calendarLabel: calendarLabel,
-    dayUrl: dayUrl,
+    calendarColor: calendarColor,
     calendarPalette: calendarPalette,
     calendarInk: calendarInk,
     todayColor: todayColor,
-    calendarColor: calendarColor
+    reminderChoices: reminderChoices
   }
 }

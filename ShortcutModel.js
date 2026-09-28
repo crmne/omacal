@@ -3,9 +3,9 @@
 // against `hyprctl binds`, and a binding tagged with its own description so
 // this plugin only ever unbinds what it bound.
 var DEFAULT = "ALT + SHIFT + SPACE"
-var DESCRIPTION = "HEY Calendar quick add"
-var COMMAND = "omarchy-shell shell toggle crmne.hey-calendar"
-var OWNER_GLOBAL = "__heycalendar_shortcut_owner"
+var DESCRIPTION = "OmaCal quick add"
+var COMMAND = "omarchy-shell shell toggle crmne.omacal"
+var OWNER_GLOBAL = "__omacal_shortcut_owner"
 var MODIFIERS = { SUPER: 64, CTRL: 4, ALT: 8, SHIFT: 1 }
 
 function parse(value) {

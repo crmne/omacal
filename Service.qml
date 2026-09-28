@@ -14,7 +14,7 @@ Item {
   property var shell: null
   property var manifest: null
 
-  readonly property string moduleName: "crmne.hey-calendar"
+  readonly property string moduleName: "crmne.omacal"
 
   readonly property var widgetEntry: {
     var config = root.shell ? root.shell.barConfig : null

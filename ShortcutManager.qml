@@ -24,7 +24,7 @@ Item {
     var parsed = Model.parse(next)
     if (!parsed) {
       message = "Quick add: use modifiers and a key, for example ALT + SHIFT + SPACE."
-      console.warn("crmne.hey-calendar:", message)
+      console.warn("crmne.omacal:", message)
       return
     }
     candidate = parsed.text
@@ -44,7 +44,7 @@ Item {
     if (taken) {
       busy = false
       message = "Quick add: " + candidate + " is already assigned to " + (taken.description || "another action") + "."
-      console.warn("crmne.hey-calendar:", message)
+      console.warn("crmne.omacal:", message)
       return
     }
     registerBinding.command = ["hyprctl", "eval", Model.registerCode(list, registered, candidate, ownerId)]
@@ -83,7 +83,7 @@ Item {
       root.busy = false
       if (code !== 0 || registerOutput.text.trim() !== "ok") {
         root.message = "Quick add: could not bind the shortcut. Check your Hyprland configuration."
-        console.warn("crmne.hey-calendar:", root.message)
+        console.warn("crmne.omacal:", root.message)
         return
       }
       root.registered = root.candidate

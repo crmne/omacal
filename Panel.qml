@@ -3,7 +3,7 @@ import Quickshell
 import qs.Commons
 import qs.Ui
 import "Model.js" as Model
-import "Hey.js" as Hey
+import "Calendar.js" as Cal
 
 // The clock's calendar popup: a month grid with ISO week numbers, built to
 // sit beside the weather panel — same hero-over-detail composition, same
@@ -24,8 +24,8 @@ import "Hey.js" as Hey
 // this panel closed.
 Panel {
   id: root
-  moduleName: "crmne.hey-calendar"
-  ipcTarget: "crmne.hey-calendar"
+  moduleName: "crmne.omacal"
+  ipcTarget: "crmne.omacal"
   manageIpc: false
 
   property var anchorItem: null
@@ -123,11 +123,11 @@ Panel {
     if (!root.hostWidget || !root.weeks || root.weeks.length === 0) return
     var first = root.weeks[0].days[0].key
     var last = root.weeks[root.weeks.length - 1].days[6].key
-    root.hostWidget.showWeeks(Hey.weekKeysBetween(first, last))
+    root.hostWidget.showWeeks(Cal.weekKeysBetween(first, last))
   }
 
   function selectDay(key) {
-    if (!Hey.isDayKey(key)) return
+    if (!Cal.isDayKey(key)) return
     if (root.composing && key !== root.selectedKey) root.composing = false
     root.selectedKey = key
   }
@@ -135,9 +135,9 @@ Panel {
   // Steps the selection by days, and the month along with it once the
   // selection walks off the edge of the one on screen.
   function moveSelection(delta) {
-    var next = Hey.addDays(root.selectedKey, delta)
+    var next = Cal.addDays(root.selectedKey, delta)
     root.selectDay(next)
-    var date = Hey.dateFromKey(next)
+    var date = Cal.dateFromKey(next)
     if (date.getFullYear() !== root.viewYear || date.getMonth() !== root.viewMonth) {
       root.viewYear = date.getFullYear()
       root.viewMonth = date.getMonth()
@@ -164,24 +164,24 @@ Panel {
   // The event may be going on a day other than the selected one ("fri"),
   // and the day view should be showing that day when it lands.
   function selectDayKeepingForm(key) {
-    if (!Hey.isDayKey(key) || key === root.selectedKey) return
+    if (!Cal.isDayKey(key) || key === root.selectedKey) return
     root.selectedKey = key
-    var date = Hey.dateFromKey(key)
+    var date = Cal.dateFromKey(key)
     root.viewYear = date.getFullYear()
     root.viewMonth = date.getMonth()
   }
 
   function openSelectedDay() {
-    if (root.hostWidget) root.hostWidget.openUrl(Hey.dayUrl(root.selectedKey))
+    if (root.hostWidget) root.hostWidget.openUrl(root.hostWidget.dayUrl(root.selectedKey))
   }
 
-  function refreshHey() {
-    if (root.hostWidget) root.hostWidget.refreshHey(true)
+  function refreshCalendar() {
+    if (root.hostWidget) root.hostWidget.refreshCalendar(true)
   }
 
   function activateEvent(event) {
     if (!root.hostWidget || !event) return
-    root.hostWidget.openUrl(event.joinUrl !== "" ? event.joinUrl : (event.url !== "" ? event.url : Hey.dayUrl(root.selectedKey)))
+    root.hostWidget.openUrl(event.joinUrl !== "" ? event.joinUrl : (event.url !== "" ? event.url : root.hostWidget.dayUrl(root.selectedKey)))
   }
 
   function deleteEvent(event) {
@@ -192,7 +192,7 @@ Panel {
 
   // "MON 28": HEY's day heading, in English like the rest of the grid.
   function dayHeading(key) {
-    var date = Hey.dateFromKey(key)
+    var date = Cal.dateFromKey(key)
     return root.weekdayLabel(date.getDay()) + " " + date.getDate()
   }
 
@@ -200,7 +200,7 @@ Panel {
     var lines = []
     for (var i = 0; i < dayEvents.length && i < 8; i++) {
       var event = dayEvents[i]
-      var time = event.allDay ? "All day" : Hey.eventTimeOnDay(event, key, root.hour24)
+      var time = event.allDay ? "All day" : Cal.eventTimeOnDay(event, key, root.hour24)
       lines.push(time + " · " + event.title)
     }
     if (dayEvents.length > 8) lines.push("and " + (dayEvents.length - 8) + " more")
@@ -275,7 +275,7 @@ Panel {
   function refresh() {
     root.today = new Date()
     root.goToToday()
-    if (root.hostWidget) root.hostWidget.refreshHey(false)
+    if (root.hostWidget) root.hostWidget.refreshCalendar(false)
   }
 
   function goToToday() {
@@ -417,7 +417,7 @@ Panel {
         else if (t === "w" || t === "W") root.toggleWeekStart()
         else if (t === "n" || t === "N") root.newEvent()
         else if (t === "s" || t === "S") root.openSettings()
-        else if (t === "r" || t === "R") root.refreshHey()
+        else if (t === "r" || t === "R") root.refreshCalendar()
         else if (t === "o" || t === "O") root.openSelectedDay()
         else if (t === ",") root.moveSelection(-1)
         else if (t === ".") root.moveSelection(1)
@@ -820,7 +820,7 @@ Panel {
                       id: dayCell
                       required property var modelData
                       readonly property var dayEvents: root.byDay[modelData.key] || []
-                      readonly property var chips: Hey.dayChips(dayEvents, 3)
+                      readonly property var chips: Cal.dayChips(dayEvents, 3)
                       readonly property bool selected: modelData.key === root.selectedKey
 
                       width: root.cellWidth
@@ -840,7 +840,7 @@ Panel {
                         width: Math.max(height, dayNumber.implicitWidth + Style.space(12))
                         height: dayNumber.implicitHeight + Style.space(2)
                         radius: height / 2
-                        color: Hey.todayColor
+                        color: Cal.todayColor
                       }
 
                       Text {
@@ -852,7 +852,7 @@ Panel {
                         y: Style.space(5)
                         text: modelData.day
                         color: modelData.today
-                          ? Hey.calendarInk
+                          ? Cal.calendarInk
                           : (modelData.inMonth
                             ? (modelData.weekend ? Qt.darker(root.contentForeground, 1.45) : root.contentForeground)
                             : Qt.darker(root.contentForeground, 2.2))
@@ -883,14 +883,14 @@ Panel {
                             radius: Math.max(3, Math.round(height / 3.5))
                             color: modelData.overflow
                               ? Qt.rgba(root.contentForeground.r, root.contentForeground.g, root.contentForeground.b, 0.28)
-                              : Hey.calendarColor(modelData.color, Color.accent)
+                              : Cal.calendarColor(modelData.color, Color.accent)
 
                             Text {
                               id: chipText
                               anchors.centerIn: parent
                               textFormat: Text.PlainText
                               text: modelData.overflow ? "+" + modelData.count : modelData.count
-                              color: modelData.overflow ? root.contentForeground : Hey.calendarInk
+                              color: modelData.overflow ? root.contentForeground : Cal.calendarInk
                               font.family: root.contentFontFamily
                               font.pixelSize: Math.max(7, Style.font.caption - 3)
                               font.bold: true
@@ -1040,14 +1040,14 @@ Panel {
                   width: dayPillText.implicitWidth + Style.space(18)
                   height: dayPillText.implicitHeight + Style.space(6)
                   radius: height / 2
-                  color: root.selectedIsToday ? Hey.todayColor : "transparent"
+                  color: root.selectedIsToday ? Cal.todayColor : "transparent"
 
                   Text {
                     id: dayPillText
                     anchors.centerIn: parent
                     textFormat: Text.PlainText
                     text: root.dayHeading(root.selectedKey)
-                    color: root.selectedIsToday ? Hey.calendarInk : root.contentForeground
+                    color: root.selectedIsToday ? Cal.calendarInk : root.contentForeground
                     font.family: root.contentFontFamily
                     font.pixelSize: Style.font.subtitle
                     font.bold: true
@@ -1061,8 +1061,8 @@ Panel {
                   anchors.verticalCenter: parent.verticalCenter
                   textFormat: Text.PlainText
                   text: {
-                    var label = Hey.relativeDayLabel(root.selectedKey, root.todayKey)
-                    var date = Hey.dateFromKey(root.selectedKey)
+                    var label = Cal.relativeDayLabel(root.selectedKey, root.todayKey)
+                    var date = Cal.dateFromKey(root.selectedKey)
                     return root.selectedIsToday ? label : label + " · " + Qt.formatDate(date, "d MMMM")
                   }
                   color: Qt.darker(root.contentForeground, 1.5)
@@ -1094,7 +1094,7 @@ Panel {
                   PanelActionButton {
                     iconText: "󰐕"
                     tooltipText: "New event (N)"
-                    enabled: !!root.hostWidget && root.hostWidget.cliMode !== ""
+                    enabled: !!root.hostWidget && root.hostWidget.backendMode !== ""
                     foreground: root.contentForeground
                     fontFamily: root.contentFontFamily
                     onClicked: root.newEvent()
@@ -1102,7 +1102,8 @@ Panel {
 
                   PanelActionButton {
                     iconText: "󰏌"
-                    tooltipText: "Open this day in HEY (O)"
+                    visible: !!root.hostWidget && root.hostWidget.capabilities.dayLink
+                    tooltipText: "Open this day in " + (root.hostWidget ? root.hostWidget.backendName : "") + " (O)"
                     foreground: root.contentForeground
                     fontFamily: root.contentFontFamily
                     onClicked: root.openSelectedDay()
@@ -1118,11 +1119,11 @@ Panel {
 
                   PanelActionButton {
                     iconText: "󰑐"
-                    tooltipText: root.hostWidget && root.hostWidget.loading ? "Reading HEY…" : "Refresh from HEY (R)"
+                    tooltipText: root.hostWidget && root.hostWidget.loading ? "Reading " + root.hostWidget.backendName + "…" : "Refresh (R)"
                     foreground: root.contentForeground
                     fontFamily: root.contentFontFamily
                     opacity: root.hostWidget && root.hostWidget.loading ? 0.45 : 1
-                    onClicked: root.refreshHey()
+                    onClicked: root.refreshCalendar()
                   }
                 }
               }
@@ -1178,7 +1179,7 @@ Panel {
                     var host = root.hostWidget
                     if (!host) return ""
                     if (host.lastError !== "") return host.lastError
-                    if (!host.loaded) return "Reading HEY…"
+                    if (!host.loaded) return "Reading " + host.backendName + "…"
                     return root.selectedIsToday ? "Nothing on today." : "Nothing on this day."
                   }
                   color: root.hostWidget && root.hostWidget.lastError !== ""
@@ -1210,7 +1211,7 @@ Panel {
                 Text {
                   textFormat: Text.PlainText
                   topPadding: Style.space(4)
-                  text: "TRACKED · " + Hey.durationLabel(Hey.trackedOnDay(root.selectedTracks, root.selectedKey))
+                  text: "TRACKED · " + Cal.durationLabel(Cal.trackedOnDay(root.selectedTracks, root.selectedKey))
                   color: Qt.darker(root.contentForeground, 1.5)
                   font.family: root.contentFontFamily
                   font.pixelSize: Style.font.caption
@@ -1244,7 +1245,7 @@ Panel {
               // ---- HEY's time tracking, on today: one tap to start, one to
               //      stop, and how long it has been running.
               Item {
-                visible: root.selectedIsToday && !root.composing && !!root.hostWidget && root.hostWidget.cliMode !== ""
+                visible: root.selectedIsToday && !root.composing && !!root.hostWidget && root.hostWidget.backendMode !== "" && root.hostWidget.capabilities.timeTracking
                 width: parent.width
                 height: visible ? trackButton.implicitHeight : 0
 
@@ -1271,8 +1272,8 @@ Panel {
                   text: {
                     var track = parent.track
                     if (!track) return "Not tracking time"
-                    var since = Hey.formatTime(new Date(track.startMs), root.hour24)
-                    return "Tracking " + Hey.durationLabel(root.nowMs - track.startMs)
+                    var since = Cal.formatTime(new Date(track.startMs), root.hour24)
+                    return "Tracking " + Cal.durationLabel(root.nowMs - track.startMs)
                       + " · since " + since + (track.title !== "" ? " · " + track.title : "")
                   }
                   color: parent.track ? root.contentForeground : Qt.darker(root.contentForeground, 1.6)

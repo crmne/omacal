@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
-  "id": "crmne.hey-calendar",
-  "name": "HEY Calendar",
-  "version": "0.1.0",
+  "id": "crmne.omacal",
+  "name": "OmaCal",
+  "version": "1.0.0",
   "author": "Carmine Paolino",
   "license": "MIT",
-  "description": "Omarchy's stock clock and calendar with HEY Calendar laid over it: per-calendar event chips on the month grid, a HEY-style day view, new events from the panel or a quick-add shortcut, reminders as notifications, and time tracking.",
+  "description": "Omarchy's stock clock and calendar with your calendar laid over it: per-calendar event chips on the month grid, a day view, new events from the panel or a quick-add shortcut, reminders as notifications, the next event in the bar, and time tracking. HEY is the first backend.",
   "kinds": [
     "service",
     "bar-widget",
@@ -17,14 +17,15 @@
     "overlay": "QuickAdd.qml"
   },
   "barWidget": {
-    "displayName": "HEY Calendar",
-    "description": "The stock date/time label and calendar popup, with your HEY calendar in it.",
+    "displayName": "OmaCal",
+    "description": "The stock date/time label and calendar popup, with your calendar in it.",
     "category": "Time",
     "aliases": [
-      "hey",
       "calendar",
       "clock",
-      "events"
+      "hey",
+      "events",
+      "omacal"
     ],
     "allowMultiple": false,
     "defaultSection": "center",

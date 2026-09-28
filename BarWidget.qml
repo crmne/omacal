@@ -4,7 +4,10 @@ import Quickshell.Io
 import qs.Commons
 import qs.Ui
 import "Model.js" as Model
-import "Hey.js" as Hey
+import "Calendar.js" as Cal
+// The calendar service OmaCal reads. One backend is wired in today; a
+// second is a file in backends/ and the choice of which module this is.
+import "backends/Hey.js" as Backend
 
 // Date/time label for the bar, and the host for the calendar popup.
 //
@@ -12,14 +15,14 @@ import "Hey.js" as Hey
 // click on a clock means — right click walks the common label formats, and
 // middle click opens the timezone picker.
 //
-// This is Omarchy's stock clock, and it also owns the HEY calendar the popup
+// This is Omarchy's stock clock, and it also owns the calendar the popup
 // draws: the weeks on screen, the calendars, the time track under way, and
 // the reminders. It owns them rather than the panel because reminders have
-// to fire with the panel closed. The one mark HEY adds to the bar itself is
-// a calendar glyph in front of the time while something is about to start.
+// to fire with the panel closed. Everything it knows about the calendar
+// service comes through Backend; everything it computes, through Cal.
 BarWidget {
   id: root
-  moduleName: "crmne.hey-calendar"
+  moduleName: "crmne.omacal"
 
   property date displayDate: clock.date
 
@@ -43,8 +46,8 @@ BarWidget {
   // Every event inside its alert window (from its earliest HEY reminder
   // until it ends), most pressing first; the bar names the first and counts
   // the rest.
-  readonly property var shownEvents: Hey.barSelection(barEventMode, events, todayEvents, displayDate.getTime(), alertLeadMinutes)
-  readonly property string eventText: Hey.barLabel(shownEvents, displayDate.getTime(), hour24, barEventMode)
+  readonly property var shownEvents: Cal.barSelection(barEventMode, events, todayEvents, displayDate.getTime(), alertLeadMinutes)
+  readonly property string eventText: Cal.barLabel(shownEvents, displayDate.getTime(), hour24, barEventMode)
   readonly property string displayText: eventText !== ""
     ? calendarGlyph + " " + eventText + "   " + dateText
     : (alerting ? calendarGlyph + "  " + dateText : dateText)
@@ -54,13 +57,13 @@ BarWidget {
     ? [calendarGlyph].concat(dateText.split("\n"))
     : dateText.split("\n")
 
-  // ---- HEY settings
-  readonly property int alertLeadMinutes: Hey.normalizedAlertLead(setting("alertLeadMinutes", 15))
-  readonly property int refreshIntervalSec: Hey.normalizedRefreshInterval(setting("refreshIntervalSec", 300))
+  // ---- Calendar settings
+  readonly property int alertLeadMinutes: Cal.normalizedAlertLead(setting("alertLeadMinutes", 15))
+  readonly property int refreshIntervalSec: Cal.normalizedRefreshInterval(setting("refreshIntervalSec", 300))
   readonly property bool notificationsEnabled: setting("notifications", true) !== false
   readonly property bool liveSync: setting("liveSync", true) !== false
   readonly property string timeFormat: String(setting("timeFormat", "auto"))
-  readonly property var hiddenCalendars: Hey.parseHiddenCalendars(setting("hiddenCalendars", []))
+  readonly property var hiddenCalendars: Cal.parseHiddenCalendars(setting("hiddenCalendars", []))
   onHiddenCalendarsChanged: rebuildIndex()
   // Whether a place writes half past four as 16:30 or 4:30pm is a regional
   // convention, so "auto" reads it off the locale.
@@ -68,22 +71,25 @@ BarWidget {
     ? true
     : (timeFormat === "12" ? false : String(Qt.locale().timeFormat(Locale.ShortFormat)).indexOf("AP") === -1)
 
-  // ---- HEY state, read by the panel.
+  // ---- Calendar state, read by the panel.
   //
   // Weeks are cached by their Monday. `events` is every cached week merged,
   // and `byDay` the same events indexed by the days they touch, which is
   // what both the month grid and the day view read.
   property var weekCache: ({})
-  // How the installed CLI is read: "week" (hey-cli 1.4.0+), "list" (1.3.x,
-  // Omarchy's own package), or "" until `hey --version` has answered, or
-  // when it never will. Nothing is fetched until this is known.
-  property string cliMode: ""
-  property string cliVersion: ""
-  property bool cliChecked: false
+  // The backend, and how its probe said to read it (for HEY: "week" on
+  // hey-cli 1.4.0+, "list" on 1.3.x, Omarchy's own package), or "" until
+  // the probe has answered, or when it never will. Nothing is fetched until
+  // this is known.
+  readonly property string backendName: Backend.info.name
+  readonly property var capabilities: Backend.info.capabilities
+  property string backendMode: ""
+  property string backendVersion: ""
+  property bool backendChecked: false
   property var events: []
   property var byDay: ({})
   property var calendars: []
-  readonly property var writableCalendars: Hey.writableCalendars(calendars)
+  readonly property var writableCalendars: Cal.writableCalendars(calendars)
   property var timeTrack: null
   // Finished time tracks by day, and the one waiting to be named: set when
   // a Stop lands, so the panel can ask for a name right away.
@@ -101,10 +107,10 @@ BarWidget {
   property var queuedWeeks: []
   property var fetchingWeeks: []
 
-  readonly property string todayKey: Hey.keyForDate(displayDate)
+  readonly property string todayKey: Cal.keyForDate(displayDate)
   readonly property var todayEvents: byDay[todayKey] || []
-  readonly property var nextEvent: Hey.currentOrNextEvent(todayEvents, displayDate.getTime())
-  readonly property var alertEvent: Hey.imminentEvent(todayEvents, displayDate.getTime(), alertLeadMinutes)
+  readonly property var nextEvent: Cal.currentOrNextEvent(todayEvents, displayDate.getTime())
+  readonly property var alertEvent: Cal.imminentEvent(todayEvents, displayDate.getTime(), alertLeadMinutes)
   readonly property bool alerting: alertEvent !== null || shownEvents.length > 0
 
   // Reminders that came due before the shell started are not replayed.
@@ -114,7 +120,7 @@ BarWidget {
   function refresh() {
     displayDate = new Date()
     if (panelLoader.item && panelLoader.item.refresh) panelLoader.item.refresh()
-    refreshHey(true)
+    refreshCalendar(true)
   }
 
   // ---- Fetching
@@ -122,33 +128,34 @@ BarWidget {
   // This week and next are always kept: they are the reminders that can
   // come due. Whatever the panel is showing rides along.
   function baseWeeks() {
-    var monday = Hey.weekStartKey(root.todayKey)
-    return [monday, Hey.addDays(monday, 7)]
+    var monday = Cal.weekStartKey(root.todayKey)
+    return [monday, Cal.addDays(monday, 7)]
   }
 
-  function refreshHey(force) {
-    if (!root.cliChecked) {
+  function refreshCalendar(force) {
+    if (!root.backendChecked) {
       if (!versionProcess.running) versionProcess.running = true
       return
     }
-    if (root.cliMode === "") return
+    if (root.backendMode === "") return
     requestWeeks(baseWeeks().concat(root.visibleWeeks), force === true)
     if (!calendarsProcess.running) calendarsProcess.running = true
     refreshTimeTrack()
   }
 
   function refreshTimeTrack() {
+    if (!root.capabilities.timeTracking) return
     if (!timeTrackProcess.running) timeTrackProcess.running = true
     if (!timeTracksProcess.running) timeTracksProcess.running = true
   }
 
   function applyTimeTracks(text) {
-    var parsed = Hey.parseTimeTracks(text)
+    var parsed = Cal.parseTimeTracks(text)
     if (parsed === null) return
     root.timeTracks = parsed
-    root.tracksByDay = Hey.tracksByDay(parsed)
+    root.tracksByDay = Cal.tracksByDay(parsed)
     if (root.stoppedAt > 0) {
-      var stopped = Hey.newestTrackSince(parsed, root.stoppedAt - 120000)
+      var stopped = Cal.newestTrackSince(parsed, root.stoppedAt - 120000)
       if (stopped) root.renameTrackId = stopped.id
       root.stoppedAt = 0
     }
@@ -168,7 +175,7 @@ BarWidget {
     var wanted = []
     for (var i = 0; i < keys.length; i++) {
       var key = keys[i]
-      if (!Hey.isDayKey(key) || wanted.indexOf(key) !== -1) continue
+      if (!Cal.isDayKey(key) || wanted.indexOf(key) !== -1) continue
       if (!force && weekIsFresh(key)) continue
       wanted.push(key)
     }
@@ -184,13 +191,13 @@ BarWidget {
 
     root.loading = true
     root.fetchingWeeks = wanted
-    weekProcess.command = Hey.fetchCommand(root.cliMode, wanted)
+    weekProcess.command = Backend.fetchCommand(root.backendMode, wanted)
     weekProcess.running = true
   }
 
   function applyWeeks(exitCode, stdout) {
     root.loading = false
-    var parsed = Hey.parseRangeOutput(stdout)
+    var parsed = Cal.parseRangeOutput(stdout)
     var cache = {}
     for (var key in root.weekCache) cache[key] = root.weekCache[key]
     var failed = false
@@ -222,7 +229,7 @@ BarWidget {
     // missing, signed out, or offline), so the panel says so rather than
     // showing a week that looks clear.
     root.lastError = failed
-      ? (exitCode === 0 ? "HEY did not answer. Is the HEY CLI signed in?" : "The HEY CLI exited with status " + exitCode + ".")
+      ? (exitCode === 0 ? root.backendName + " did not answer. Is its CLI signed in?" : root.backendName + " exited with status " + exitCode + ".")
       : ""
     root.weekCache = cache
     rebuildIndex()
@@ -238,13 +245,13 @@ BarWidget {
   }
 
   function rebuildIndex() {
-    root.events = Hey.withoutHidden(Hey.mergeWeeks(root.weekCache), root.hiddenCalendars)
-    root.byDay = Hey.indexByDay(root.events)
+    root.events = Cal.withoutHidden(Cal.mergeWeeks(root.weekCache), root.hiddenCalendars)
+    root.byDay = Cal.indexByDay(root.events)
   }
 
   // Forgets the cached copy of the weeks a change touched, and re-reads them.
   function invalidateDay(dayKey) {
-    var week = Hey.weekStartKey(dayKey)
+    var week = Cal.weekStartKey(dayKey)
     requestWeeks([week].concat(root.visibleWeeks), true)
   }
 
@@ -253,13 +260,14 @@ BarWidget {
   function checkReminders() {
     if (!root.notificationsEnabled || !root.loaded) return
     var now = Date.now()
-    var due = Hey.dueReminders(root.events, now, root.startedAt - 60000, root.shownReminders)
+    var due = Cal.dueReminders(root.events, now, root.startedAt - 60000, root.shownReminders)
     if (due.length === 0) return
     var shown = {}
     for (var key in root.shownReminders) shown[key] = root.shownReminders[key]
     for (var i = 0; i < due.length; i++) {
       shown[due[i].key] = now
-      Quickshell.execDetached(Hey.notifyCommand(due[i].event, now, root.hour24))
+      Quickshell.execDetached(Cal.notifyCommand(due[i].event, now, root.hour24,
+        root.dayUrl(Cal.eventDayKeys(due[i].event)[0] || "")))
     }
     // Forgets what is long past, so the set does not grow for as long as the
     // shell runs.
@@ -286,17 +294,9 @@ BarWidget {
 
   function finishWrite(exitCode, stdout) {
     root.writing = false
-    var ok = false
-    var message = ""
-    try {
-      var parsed = JSON.parse(String(stdout || ""))
-      ok = parsed && parsed.ok === true
-      message = parsed ? String(parsed.summary || parsed.error || "") : ""
-    } catch (e) {
-      ok = false
-    }
-    if (!ok && message === "")
-      message = exitCode === 124 ? "HEY took too long to answer." : "HEY did not accept that (exit " + exitCode + ")."
+    var result = Backend.writeResult(exitCode, stdout)
+    var ok = result.ok
+    var message = result.message
     root.writeError = ok ? "" : message
     if (!ok) root.stoppedAt = 0
     if (root.writingDayKey !== "") invalidateDay(root.writingDayKey)
@@ -305,39 +305,48 @@ BarWidget {
   }
 
   function addEvent(form) {
-    var built = Hey.addEventCommand(form)
-    if (built.error) {
-      root.writeError = built.error
-      root.writeFinished(false, built.error)
+    var checked = Cal.validateEvent(form)
+    if (checked.error) {
+      root.writeError = checked.error
+      root.writeFinished(false, checked.error)
       return false
     }
-    return runWrite(built.command, form.date)
+    return runWrite(Backend.createCommand(checked.request), form.date)
   }
 
   function deleteEvent(event, dayKey) {
-    return runWrite(Hey.deleteCommand(event), dayKey)
+    return runWrite(Backend.deleteCommand(event), dayKey)
   }
 
   function startTimeTrack() {
-    return runWrite(Hey.timeTrackStartCommand(), "")
+    return runWrite(Backend.trackStartCommand(), "")
   }
 
   function stopTimeTrack() {
     root.stoppedAt = Date.now()
-    return runWrite(Hey.timeTrackStopCommand(), "")
+    return runWrite(Backend.trackStopCommand(), "")
   }
 
   function renameTimeTrack(id, name) {
     root.renameTrackId = ""
-    return runWrite(Hey.timeTrackRenameCommand(id, name), "")
+    return runWrite(Backend.trackRenameCommand(id, name), "")
   }
 
   function deleteTimeTrack(id) {
-    return runWrite(Hey.timeTrackDeleteCommand(id), "")
+    return runWrite(Backend.trackDeleteCommand(id), "")
+  }
+
+  // The backend's page for a day, or "" when it has none.
+  function dayUrl(dayKey) {
+    return root.capabilities.dayLink ? Backend.dayUrl(dayKey) : ""
+  }
+
+  function modeNote() {
+    return Backend.modeNote(root.backendMode, root.backendVersion)
   }
 
   function openUrl(url) {
-    var safe = Hey.safeUrl(url)
+    var safe = Cal.safeUrl(url)
     if (safe !== "") Quickshell.execDetached(["xdg-open", safe])
   }
 
@@ -431,7 +440,7 @@ BarWidget {
   onBarChanged: injectPanel()
   onSettingsChanged: injectPanel()
 
-  Component.onCompleted: refreshHey(true)
+  Component.onCompleted: refreshCalendar(true)
 
   SystemClock {
     id: clock
@@ -440,7 +449,7 @@ BarWidget {
       var wasKey = root.todayKey
       root.displayDate = date
       // Midnight moved the day, and on Mondays the week with it.
-      if (Hey.keyForDate(date) !== wasKey) root.refreshHey(false)
+      if (Cal.keyForDate(date) !== wasKey) root.refreshCalendar(false)
     }
   }
 
@@ -448,7 +457,7 @@ BarWidget {
     interval: root.refreshIntervalSec * 1000
     running: true
     repeat: true
-    onTriggered: root.refreshHey(true)
+    onTriggered: root.refreshCalendar(true)
   }
 
   // Reminders are checked off the cached events, not off HEY, so this is
@@ -480,22 +489,19 @@ BarWidget {
   Process {
     id: versionProcess
     running: false
-    command: Hey.versionCommand
+    command: Backend.probeCommand
     stdout: StdioCollector {
       onStreamFinished: {
-        var version = Hey.parseCliVersion(text)
-        root.cliVersion = Hey.formatVersion(version)
-        root.cliMode = Hey.cliMode(text)
-        root.cliChecked = true
-        if (root.cliMode === "") {
-          root.lastError = String(text).replace(/\s+/g, "") === ""
-            ? "The HEY CLI is not installed. Install hey-cli and run `hey setup`."
-            : "hey-cli " + root.cliVersion + " is too old. HEY Calendar needs "
-              + Hey.formatVersion(Hey.minimumCliVersion) + " or newer."
+        var probed = Backend.probe(text)
+        root.backendVersion = probed.version
+        root.backendMode = probed.mode
+        root.backendChecked = true
+        if (root.backendMode === "") {
+          root.lastError = probed.error
           root.loaded = true
           return
         }
-        root.refreshHey(true)
+        root.refreshCalendar(true)
       }
     }
   }
@@ -503,10 +509,10 @@ BarWidget {
   Process {
     id: calendarsProcess
     running: false
-    command: Hey.calendarsCommand
+    command: Backend.calendarsCommand
     stdout: StdioCollector {
       onStreamFinished: {
-        var parsed = Hey.parseCalendars(text)
+        var parsed = Cal.parseCalendars(text)
         if (parsed !== null) root.calendars = parsed
       }
     }
@@ -515,10 +521,10 @@ BarWidget {
   Process {
     id: timeTrackProcess
     running: false
-    command: Hey.timeTrackCommand
+    command: Backend.currentTrackCommand
     stdout: StdioCollector {
       onStreamFinished: {
-        var parsed = Hey.parseTimeTrack(text)
+        var parsed = Cal.parseCurrentTrack(text)
         if (parsed !== undefined) root.timeTrack = parsed
       }
     }
@@ -527,7 +533,7 @@ BarWidget {
   Process {
     id: timeTracksProcess
     running: false
-    command: Hey.timeTracksCommand
+    command: Backend.tracksCommand
     stdout: StdioCollector {
       onStreamFinished: root.applyTimeTracks(text)
     }
@@ -550,35 +556,33 @@ BarWidget {
     }
   }
 
-  // ---- Live sync. HEY pushes every change to a calendar down `hey watch`;
-  //      any line other than the watch's own "ready" re-reads what is on
-  //      screen, debounced so a burst of edits costs one fetch. The polling
+  // ---- Live sync, for backends that can stream their changes (HEY: `hey
+  //      watch`). Any change re-reads what is on screen, debounced so a burst of edits costs one fetch. The polling
   //      timer above stays as the fallback for when the watch is down.
   Timer {
     id: changeDebounce
     interval: 1500
-    onTriggered: root.refreshHey(true)
+    onTriggered: root.refreshCalendar(true)
   }
 
   Process {
     id: watchProcess
-    running: root.liveSync && root.cliMode !== ""
-    command: Hey.watchCommand
+    running: root.liveSync && root.capabilities.watch && root.backendMode !== ""
+    command: Backend.watchCommand
     stdout: SplitParser {
       onRead: function(line) {
-        if (line.indexOf("\"ready\"") !== -1 || line.indexOf("\"disconnected\"") !== -1) return
-        changeDebounce.restart()
+        if (Backend.isWatchChange(line)) changeDebounce.restart()
       }
     }
     // A watch that dies (signed out, network gone, CLI upgraded under it)
     // is restarted after a pause rather than in a tight loop.
-    onExited: if (root.liveSync && root.cliMode !== "") watchRestart.restart()
+    onExited: if (root.liveSync && root.backendMode !== "") watchRestart.restart()
   }
 
   Timer {
     id: watchRestart
     interval: 60000
-    onTriggered: if (root.liveSync && root.cliMode !== "" && !watchProcess.running) watchProcess.running = true
+    onTriggered: if (root.liveSync && root.backendMode !== "" && !watchProcess.running) watchProcess.running = true
   }
 
   Loader {
@@ -593,7 +597,7 @@ BarWidget {
   }
 
   IpcHandler {
-    target: "crmne.hey-calendar"
+    target: "crmne.omacal"
 
     function refresh(): void { root.refresh() }
     function cycleFormat(): void { root.cycleFormat() }
@@ -624,14 +628,14 @@ BarWidget {
       if (root.shownEvents.length > 0) {
         var lines = []
         for (var i = 0; i < root.shownEvents.length && i < 8; i++)
-          lines.push(Hey.barEventLabel(root.shownEvents[i], root.displayDate.getTime(), root.hour24))
+          lines.push(Cal.barEventLabel(root.shownEvents[i], root.displayDate.getTime(), root.hour24))
         return lines.join("\n")
       }
       if (root.alerting) {
-        var minutes = Hey.minutesUntil(root.alertEvent, root.displayDate.getTime())
+        var minutes = Cal.minutesUntil(root.alertEvent, root.displayDate.getTime())
         return (minutes <= 0 ? "Now" : "In " + minutes + " min") + " · " + root.alertEvent.title
       }
-      if (root.nextEvent) return "Next: " + Hey.eventRangeLabel(root.nextEvent, root.hour24)
+      if (root.nextEvent) return "Next: " + Cal.eventRangeLabel(root.nextEvent, root.hour24)
         + " · " + root.nextEvent.title
       return ""
     }

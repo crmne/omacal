@@ -3,7 +3,8 @@ import Quickshell
 import Quickshell.Io
 import Quickshell.Wayland
 import qs.Commons
-import "Hey.js" as Hey
+import "Calendar.js" as Cal
+import "backends/Hey.js" as Backend
 
 // The quick-add card: the calendar panel's new-event form on its own, in
 // the middle of the screen, a shortcut away (Alt+Shift+Space by default).
@@ -20,18 +21,18 @@ Item {
   property var manifest: null
   property bool opened: false
 
-  readonly property string moduleName: "crmne.hey-calendar"
+  readonly property string moduleName: "crmne.omacal"
 
   property var calendars: []
   property bool busy: false
   property string error: ""
-  property string cliMode: ""
+  property string backendMode: ""
 
   function open(payload) {
     root.error = ""
     root.opened = true
     if (!calendarsProcess.running) calendarsProcess.running = true
-    if (root.cliMode === "" && !versionProcess.running) versionProcess.running = true
+    if (root.backendMode === "" && !versionProcess.running) versionProcess.running = true
     Qt.callLater(function() { form.reset() })
   }
 
@@ -78,48 +79,38 @@ Item {
 
   function submit(formValues) {
     if (root.busy) return
-    var built = Hey.addEventCommand(formValues)
-    if (built.error) {
-      root.error = built.error
+    var checked = Cal.validateEvent(formValues)
+    if (checked.error) {
+      root.error = checked.error
       return
     }
     if (Number(formValues.calendarId) > 0) rememberCalendar(Number(formValues.calendarId))
     root.error = ""
     root.busy = true
     addProcess.finished = false
-    addProcess.command = built.command
+    addProcess.command = Backend.createCommand(checked.request)
     addProcess.running = true
   }
 
   function finishAdd(exitCode, stdout) {
     root.busy = false
-    var ok = false
-    var message = ""
-    try {
-      var parsed = JSON.parse(String(stdout || ""))
-      ok = parsed && parsed.ok === true
-      message = parsed ? String(parsed.summary || parsed.error || "") : ""
-    } catch (e) {
-      ok = false
-    }
-    if (ok) {
+    var result = Backend.writeResult(exitCode, stdout)
+    if (result.ok) {
       dismiss()
       return
     }
-    root.error = message !== "" ? message
-      : (exitCode === 124 ? "HEY took too long to answer." : "HEY did not accept that (exit " + exitCode + ").")
+    root.error = result.message
   }
 
   Process {
     id: versionProcess
     running: false
-    command: Hey.versionCommand
+    command: Backend.probeCommand
     stdout: StdioCollector {
       onStreamFinished: {
-        root.cliMode = Hey.cliMode(text)
-        if (root.cliMode === "")
-          root.error = "The HEY CLI is missing or too old. HEY Calendar needs hey-cli "
-            + Hey.formatVersion(Hey.minimumCliVersion) + " or newer."
+        var probed = Backend.probe(text)
+        root.backendMode = probed.mode
+        if (root.backendMode === "") root.error = probed.error
       }
     }
   }
@@ -127,11 +118,11 @@ Item {
   Process {
     id: calendarsProcess
     running: false
-    command: Hey.calendarsCommand
+    command: Backend.calendarsCommand
     stdout: StdioCollector {
       onStreamFinished: {
-        var parsed = Hey.parseCalendars(text)
-        if (parsed !== null) root.calendars = Hey.writableCalendars(parsed)
+        var parsed = Cal.parseCalendars(text)
+        if (parsed !== null) root.calendars = Cal.writableCalendars(parsed)
       }
     }
   }
@@ -158,7 +149,7 @@ Item {
     anchors { top: true; bottom: true; left: true; right: true }
     exclusionMode: ExclusionMode.Ignore
     color: "transparent"
-    WlrLayershell.namespace: "omarchy-hey-calendar-quick-add"
+    WlrLayershell.namespace: "omarchy-omacal-quick-add"
     WlrLayershell.layer: WlrLayer.Overlay
     WlrLayershell.keyboardFocus: root.opened ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
 
@@ -194,7 +185,7 @@ Item {
         id: form
         anchors.fill: parent
         anchors.margins: Style.space(18)
-        todayKey: Hey.keyForDate(new Date())
+        todayKey: Cal.keyForDate(new Date())
         calendars: root.calendars
         defaultCalendarId: root.lastCalendarId()
         busy: root.busy

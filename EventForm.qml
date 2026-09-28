@@ -1,7 +1,7 @@
 import QtQuick
 import qs.Commons
 import qs.Ui
-import "Hey.js" as Hey
+import "Calendar.js" as Cal
 
 // A new event, with the fields HEY's own quick form asks for: a title,
 // which calendar, which day, when, where, and a reminder. The calendar
@@ -26,7 +26,7 @@ Item {
   // quick-add card leaves it to today.
   property string dayKey: ""
   property string todayKey: ""
-  readonly property string resolvedDay: Hey.parseDay(dateField.text, todayKey !== "" ? todayKey : Hey.keyForDate(new Date()))
+  readonly property string resolvedDay: Cal.parseDay(dateField.text, todayKey !== "" ? todayKey : Cal.keyForDate(new Date()))
   property var calendars: []
   property int defaultCalendarId: 0
   property bool busy: false
@@ -67,8 +67,8 @@ Item {
     return "Tab next field · Alt+←→ calendar · Alt+↑↓ reminder · Alt+A all day · Enter add"
   }
 
-  readonly property string dayLabel: Hey.isDayKey(resolvedDay)
-    ? Qt.formatDate(Hey.dateFromKey(resolvedDay), "dddd d MMMM yyyy")
+  readonly property string dayLabel: Cal.isDayKey(resolvedDay)
+    ? Qt.formatDate(Cal.dateFromKey(resolvedDay), "dddd d MMMM yyyy")
     : ""
 
   implicitHeight: formColumn.implicitHeight
@@ -78,10 +78,10 @@ Item {
   function reset() {
     titleField.text = ""
     locationField.text = ""
-    var today = root.todayKey !== "" ? root.todayKey : Hey.keyForDate(new Date())
-    var day = Hey.isDayKey(root.dayKey) ? root.dayKey : today
+    var today = root.todayKey !== "" ? root.todayKey : Cal.keyForDate(new Date())
+    var day = Cal.isDayKey(root.dayKey) ? root.dayKey : today
     dateField.text = dayText(day)
-    var start = Hey.suggestedStart(day, new Date())
+    var start = Cal.suggestedStart(day, new Date())
     startField.text = start
     endField.text = ""
     root.allDay = false
@@ -96,14 +96,14 @@ Item {
   }
 
   function currentToday() {
-    return root.todayKey !== "" ? root.todayKey : Hey.keyForDate(new Date())
+    return root.todayKey !== "" ? root.todayKey : Cal.keyForDate(new Date())
   }
 
   function dayText(day) {
     var today = currentToday()
     if (day === today) return "today"
-    if (day === Hey.addDays(today, 1)) return "tomorrow"
-    return Qt.formatDate(Hey.dateFromKey(day), "d MMM yyyy")
+    if (day === Cal.addDays(today, 1)) return "tomorrow"
+    return Qt.formatDate(Cal.dateFromKey(day), "d MMM yyyy")
   }
 
   function pickCalendar(preferred) {
@@ -115,7 +115,7 @@ Item {
   function submit() {
     if (root.busy) return
     root.localError = ""
-    if (!Hey.isDayKey(root.resolvedDay)) {
+    if (!Cal.isDayKey(root.resolvedDay)) {
       root.localError = "“" + dateField.text + "” is not a day I know. Try fri, tomorrow or 3 oct."
       return
     }
@@ -148,16 +148,16 @@ Item {
   }
 
   function stepCalendar(delta) {
-    root.calendarId = Hey.cycle(root.calendarIds, root.calendarId, delta)
+    root.calendarId = Cal.cycle(root.calendarIds, root.calendarId, delta)
   }
 
   function stepReminder(delta) {
-    root.remind = Hey.cycle(root.reminderValues, root.remind, delta)
+    root.remind = Cal.cycle(root.reminderValues, root.remind, delta)
   }
 
   function stepDay(delta) {
-    var base = Hey.isDayKey(root.resolvedDay) ? root.resolvedDay : currentToday()
-    dateField.text = dayText(Hey.addDays(base, delta))
+    var base = Cal.isDayKey(root.resolvedDay) ? root.resolvedDay : currentToday()
+    dateField.text = dayText(Cal.addDays(base, delta))
   }
 
   // Every field and row shares this. Returns having accepted the key, or
@@ -186,11 +186,11 @@ Item {
     else if (item === dateField && key === Qt.Key_Up) stepDay(shift ? -7 : -1)
     else if (item === dateField && key === Qt.Key_Down) stepDay(shift ? 7 : 1)
     else if (item === startField && (key === Qt.Key_Up || key === Qt.Key_Down))
-      startField.text = Hey.nudgeClock(startField.text, key === Qt.Key_Up ? -15 : 15, Hey.suggestedStart(root.resolvedDay, new Date()))
+      startField.text = Cal.nudgeClock(startField.text, key === Qt.Key_Up ? -15 : 15, Cal.suggestedStart(root.resolvedDay, new Date()))
     else if (item === endField && (key === Qt.Key_Up || key === Qt.Key_Down)) {
       // A blank end is "an hour after the start", so that is where it moves from.
-      var from = Hey.shiftClock(startField.text, 60)
-      endField.text = Hey.nudgeClock(endField.text !== "" ? endField.text : from, key === Qt.Key_Up ? -15 : 15, from)
+      var from = Cal.shiftClock(startField.text, 60)
+      endField.text = Cal.nudgeClock(endField.text !== "" ? endField.text : from, key === Qt.Key_Up ? -15 : 15, from)
     }
     else return
     event.accepted = true
@@ -283,7 +283,7 @@ Item {
           width: calendarName.implicitWidth + Style.space(20)
           height: calendarName.implicitHeight + Style.space(8)
           radius: height / 2
-          color: Hey.calendarColor(modelData.color, root.accent)
+          color: Cal.calendarColor(modelData.color, root.accent)
           opacity: chosen || calendarMouse.containsMouse ? 1 : 0.55
           border.width: chosen ? 2 : 0
           border.color: root.foreground
@@ -293,7 +293,7 @@ Item {
             anchors.centerIn: parent
             textFormat: Text.PlainText
             text: modelData.name
-            color: Hey.calendarInk
+            color: Cal.calendarInk
             font.family: root.fontFamily
             font.pixelSize: Style.font.bodySmall
             font.bold: parent.chosen
@@ -439,7 +439,7 @@ Item {
         anchors.right: cancelButton.left
         anchors.rightMargin: Style.space(10)
         anchors.verticalCenter: parent.verticalCenter
-        text: root.busy ? "Adding to HEY…" : (root.localError !== "" ? root.localError : root.error)
+        text: root.busy ? "Adding…" : (root.localError !== "" ? root.localError : root.error)
         color: root.busy ? Qt.darker(root.foreground, 1.4) : Color.urgent
         font.family: root.fontFamily
         font.pixelSize: Style.font.bodySmall

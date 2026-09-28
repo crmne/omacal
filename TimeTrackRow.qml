@@ -1,7 +1,7 @@
 import QtQuick
 import qs.Commons
 import qs.Ui
-import "Hey.js" as Hey
+import "Calendar.js" as Cal
 
 // One finished time track in the day view: when, what, how long.
 //
@@ -30,7 +30,7 @@ Item {
 
   readonly property string rangeText: {
     if (!track) return ""
-    var span = Hey.eventTimeOnDay({ allDay: false, startMs: track.startMs, endMs: track.endMs,
+    var span = Cal.eventTimeOnDay({ allDay: false, startMs: track.startMs, endMs: track.endMs,
       startsAt: "", endsAt: "" }, dayKey, hour24)
     return span
   }
@@ -124,7 +124,7 @@ Item {
       id: durationText
       anchors.verticalCenter: parent.verticalCenter
       textFormat: Text.PlainText
-      text: root.track ? Hey.durationLabel(root.track.endMs - root.track.startMs) : ""
+      text: root.track ? Cal.durationLabel(root.track.endMs - root.track.startMs) : ""
       color: Qt.darker(root.foreground, 1.3)
       font.family: root.fontFamily
       font.pixelSize: Style.font.bodySmall

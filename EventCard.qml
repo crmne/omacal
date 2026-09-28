@@ -1,7 +1,7 @@
 import QtQuick
 import qs.Commons
 import qs.Ui
-import "Hey.js" as Hey
+import "Calendar.js" as Cal
 
 // One event in the day view, drawn the way HEY draws it: a block in the
 // calendar's pastel with dark ink, the time small above a bold title.
@@ -27,19 +27,19 @@ Item {
   signal activated()
   signal deleteRequested()
 
-  readonly property string position: event ? Hey.spanPosition(event, dayKey) : "single"
+  readonly property string position: event ? Cal.spanPosition(event, dayKey) : "single"
   readonly property bool pill: !!event && (event.allDay || position === "middle")
-  readonly property color fill: event ? Hey.calendarColor(event.color, accent) : accent
-  readonly property color ink: Hey.calendarInk
-  readonly property bool past: Hey.hasEnded(event, nowMs)
-  readonly property bool current: Hey.isNow(event, nowMs)
-  readonly property bool declined: Hey.isDeclined(event)
+  readonly property color fill: event ? Cal.calendarColor(event.color, accent) : accent
+  readonly property color ink: Cal.calendarInk
+  readonly property bool past: Cal.hasEnded(event, nowMs)
+  readonly property bool current: Cal.isNow(event, nowMs)
+  readonly property bool declined: Cal.isDeclined(event)
   readonly property bool deletable: !!event && !event.recurring && /^\d+$/.test(String(event.seriesId))
-  readonly property string timeText: event ? Hey.eventTimeOnDay(event, dayKey, hour24) : ""
+  readonly property string timeText: event ? Cal.eventTimeOnDay(event, dayKey, hour24) : ""
   readonly property string metaText: {
     if (!event) return ""
     var parts = []
-    if (event.calendar !== "") parts.push(Hey.calendarLabel(event.calendar))
+    if (event.calendar !== "") parts.push(Cal.calendarLabel(event.calendar))
     if (event.location !== "") parts.push(event.location)
     return parts.join(" · ")
   }
@@ -96,7 +96,7 @@ Item {
       id: pillMeta
       textFormat: Text.PlainText
       anchors.verticalCenter: parent.verticalCenter
-      text: root.position === "middle" ? "continues" : Hey.calendarLabel(root.event ? root.event.calendar : "")
+      text: root.position === "middle" ? "continues" : Cal.calendarLabel(root.event ? root.event.calendar : "")
       color: Qt.rgba(0.106, 0.149, 0.196, 0.6)
       font.family: root.fontFamily
       font.pixelSize: Style.font.caption
@@ -175,11 +175,11 @@ Item {
       fontFamily: root.fontFamily
       text: {
         if (!root.event) return ""
-        var lines = [Hey.eventRangeLabel(root.event, root.hour24) + " · " + root.event.title]
+        var lines = [Cal.eventRangeLabel(root.event, root.hour24) + " · " + root.event.title]
         if (root.event.calendar !== "") lines.push(root.event.calendar)
         if (root.event.location !== "") lines.push(root.event.location)
         if (root.event.recurring) lines.push("Repeats")
-        lines.push(root.event.joinUrl !== "" ? (root.event.joinTitle || "Click to join") : "Click to open in HEY")
+        lines.push(root.event.joinUrl !== "" ? (root.event.joinTitle || "Click to join") : "Click to open")
         return lines.join("\n")
       }
     }

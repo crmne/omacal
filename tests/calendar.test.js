@@ -1,6 +1,7 @@
 // Plain node, no dependencies: `tests/run` runs this in several timezones.
 var assert = require("assert")
-var Hey = require("../Hey.js")
+var Hey = require("../Calendar.js")
+var Backend = require("../backends/Hey.js")
 
 var tz = process.env.TZ || "local"
 var failures = 0
@@ -37,24 +38,26 @@ function allDay(id, title, startKey, endKey, extra) {
   return Hey.normalizeEvent(raw)
 }
 
-// ---- Versions
+// ---- HEY backend: versions
+
+function mode(text) { return Backend.probe(text).mode }
 
 test("Omarchy's packaged 1.3.0 reads by list, 1.4+ by week", function() {
-  assert.strictEqual(Hey.cliMode("hey version 1.3.0"), "list")
-  assert.strictEqual(Hey.cliMode("hey version 1.3.9"), "list")
-  assert.strictEqual(Hey.cliMode("hey version 1.4.0"), "week")
-  assert.strictEqual(Hey.cliMode("hey version 1.7.0"), "week")
-  assert.strictEqual(Hey.cliMode("hey version 2.0.0"), "week")
+  assert.strictEqual(mode("hey version 1.3.0"), "list")
+  assert.strictEqual(mode("hey version 1.3.9"), "list")
+  assert.strictEqual(mode("hey version 1.4.0"), "week")
+  assert.strictEqual(mode("hey version 1.7.0"), "week")
+  assert.strictEqual(mode("hey version 2.0.0"), "week")
 })
 
 test("older or missing CLIs are refused, unreadable versions assumed new", function() {
-  assert.strictEqual(Hey.cliMode("hey version 1.2.9"), "")
-  assert.strictEqual(Hey.cliMode(""), "")
-  assert.strictEqual(Hey.cliMode("hey version dev"), "week")
+  assert.strictEqual(mode("hey version 1.2.9"), "")
+  assert.strictEqual(mode(""), "")
+  assert.strictEqual(mode("hey version dev"), "week")
 })
 
 test("list mode pads the window a day each side and names the span", function() {
-  var cmd = Hey.fetchCommand("list", ["2026-10-05", "2026-09-28"])
+  var cmd = Backend.fetchCommand("list", ["2026-10-05", "2026-09-28"])
   assert.deepStrictEqual(cmd.slice(-4), ["2026-09-28", "2026-10-11", "2026-09-27", "2026-10-12"])
 })
 
@@ -243,6 +246,33 @@ test("long titles are cut to fit the bar", function() {
   assert.ok(Hey.barEventLabel(e, e.startMs - 60000, true).indexOf("…") !== -1)
 })
 
+// ---- Standard shapes any backend prints
+
+test("time tracks are read from the standard shape", function() {
+  var tracks = Hey.parseTimeTracks(JSON.stringify([
+    { id: 1, name: "Writing", named: true, notes: "", starts_at: "2026-09-28T10:00:00Z", ends_at: "2026-09-28T11:00:00Z" },
+    { id: 2, name: "", named: false, starts_at: "2026-09-28T12:00:00Z", ends_at: "2026-09-28T12:30:00Z" }
+  ]))
+  assert.deepStrictEqual(tracks.map(function(t) { return [t.name, t.named] }), [["Writing", true], ["Time track", false]])
+  assert.strictEqual(Hey.parseCurrentTrack('{"ok":true,"track":null}'), null)
+  assert.strictEqual(Hey.parseCurrentTrack('{"ok":true,"track":{"id":5,"name":"Deep work","starts_at":"2026-09-28T10:00:00Z"}}').title, "Deep work")
+  assert.strictEqual(Hey.parseCurrentTrack('{"ok":false}'), undefined)
+})
+
+test("calendar colors: HEY's names, other services' hex, the accent otherwise", function() {
+  assert.strictEqual(Hey.calendarColor("blue", "#000000"), "#6baffc")
+  assert.strictEqual(Hey.calendarColor("#1A2B3C", "#000000"), "#1a2b3c")
+  assert.strictEqual(Hey.calendarColor("chartreuse", "#000000"), "#000000")
+})
+
+test("the HEY backend probes its CLI and says why it cannot run", function() {
+  assert.ok(Backend.probe("").error.indexOf("not installed") !== -1)
+  assert.ok(Backend.probe("hey version 1.2.0").error.indexOf("too old") !== -1)
+  assert.strictEqual(Backend.probe("hey version 1.3.0").version, "1.3.0")
+  assert.strictEqual(Backend.writeResult(0, '{"ok":true,"summary":"Created"}').ok, true)
+  assert.strictEqual(Backend.writeResult(124, "").message, "HEY took too long to answer.")
+})
+
 // ---- Reminders
 
 test("due reminders fire once, and never for what came due before start", function() {
@@ -307,8 +337,14 @@ test("arrow keys nudge times on a quarter-hour grid, and wrap lists", function()
   assert.strictEqual(Hey.cycle(["", "10m"], "", 1), "10m")
 })
 
+// validateEvent checks the form; the backend turns the request into argv.
+function build(form) {
+  var checked = Hey.validateEvent(form)
+  return checked.error ? checked : { command: Backend.createCommand(checked.request) }
+}
+
 test("the add command is an argv, with every field in its own argument", function() {
-  var built = Hey.addEventCommand({ title: "Dinner; rm -rf ~", date: "2026-09-28", startTime: "7pm", endTime: "22:00",
+  var built = build({ title: "Dinner; rm -rf ~", date: "2026-09-28", startTime: "7pm", endTime: "22:00",
     calendarId: 383706, location: "Aedes", remind: "30m" })
   var args = built.command
   assert.ok(args.indexOf("Dinner; rm -rf ~") !== -1)
@@ -318,20 +354,20 @@ test("the add command is an argv, with every field in its own argument", functio
 })
 
 test("an end before the start is the next morning", function() {
-  var args = Hey.addEventCommand({ title: "Party", date: "2026-09-28", startTime: "22:00", endTime: "1:00" }).command
+  var args = build({ title: "Party", date: "2026-09-28", startTime: "22:00", endTime: "1:00" }).command
   assert.deepStrictEqual(args.slice(args.indexOf("--ends-on"), args.indexOf("--ends-on") + 2), ["--ends-on", "2026-09-29"])
 })
 
 test("the form refuses what HEY would", function() {
-  assert.ok(Hey.addEventCommand({ title: " ", date: "2026-09-28" }).error)
-  assert.ok(Hey.addEventCommand({ title: "X", date: "2026-09-28", startTime: "nope" }).error)
-  assert.ok(Hey.addEventCommand({ title: "X", date: "2026-09-28", startTime: "10:00", endTime: "10:00" }).error)
+  assert.ok(Hey.validateEvent({ title: " ", date: "2026-09-28" }).error)
+  assert.ok(Hey.validateEvent({ title: "X", date: "2026-09-28", startTime: "nope" }).error)
+  assert.ok(Hey.validateEvent({ title: "X", date: "2026-09-28", startTime: "10:00", endTime: "10:00" }).error)
 })
 
 test("repeating events are never deleted by series id", function() {
   var e = timed(1, "Standup", 2026, 9, 28, 9, 0, 15, { recurring: true })
-  assert.deepStrictEqual(Hey.deleteCommand(e), [])
-  assert.deepStrictEqual(Hey.deleteCommand(timed(42, "Once", 2026, 9, 28, 9, 0, 15)).slice(-3), ["delete", "42", "--json"])
+  assert.deepStrictEqual(Backend.deleteCommand(e), [])
+  assert.deepStrictEqual(Backend.deleteCommand(timed(42, "Once", 2026, 9, 28, 9, 0, 15)).slice(-3), ["delete", "42", "--json"])
 })
 
 if (failures > 0) {

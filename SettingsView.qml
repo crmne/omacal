@@ -1,7 +1,7 @@
 import QtQuick
 import qs.Commons
 import qs.Ui
-import "Hey.js" as Hey
+import "Calendar.js" as Cal
 
 // HEY Calendar's settings, inside the panel. Omarchy keeps a widget's
 // schema but draws no settings screen for it yet, so this is where they are
@@ -30,7 +30,7 @@ FocusScope {
     if (root.panel) root.panel.persistSettings(values)
   }
 
-  readonly property var hidden: Hey.parseHiddenCalendars(value("hiddenCalendars", ""))
+  readonly property var hidden: Cal.parseHiddenCalendars(value("hiddenCalendars", ""))
   property int calendarCursor: 0
 
   function toggleCalendar(name) {
@@ -67,11 +67,11 @@ FocusScope {
   // the chip under the pointer, or the chosen one.
   readonly property var barEventOptions: [
     { value: "soon", label: "Name + time",
-      help: "Shows the event's name and when it starts, like “Omarchy Podcast · in 12m”, from its earliest HEY alert until it ends." },
+      help: "Shows the event's name and when it starts, like “Omarchy Podcast · in 12m”, from its earliest alert until it ends." },
     { value: "name", label: "Name",
-      help: "Shows only the event's name, like “Omarchy Podcast”, from its earliest HEY alert until it ends." },
+      help: "Shows only the event's name, like “Omarchy Podcast”, from its earliest alert until it ends." },
     { value: "time", label: "Time",
-      help: "Shows only when the event starts, like “in 12m”, without its name, from its earliest HEY alert until it ends." },
+      help: "Shows only when the event starts, like “in 12m”, without its name, from its earliest alert until it ends." },
     { value: "next", label: "Next",
       help: "Always shows today's next event with its time, all day long, like “Dinner · at 18:30”. Events inside their alert come first." },
     { value: "off", label: "Off",
@@ -79,7 +79,7 @@ FocusScope {
   ]
 
   readonly property var leadOptions: [
-    { value: "0", label: "Never", help: "Events with no alert never appear in the bar. Only events with a HEY alert do, from that alert." },
+    { value: "0", label: "Never", help: "Events with no alert never appear in the bar. Only events with an alert do, from that alert." },
     { value: "5", label: "5 min", help: "Events with no alert appear in the bar 5 minutes before they start." },
     { value: "15", label: "15 min", help: "Events with no alert appear in the bar 15 minutes before they start." },
     { value: "30", label: "30 min", help: "Events with no alert appear in the bar 30 minutes before they start." },
@@ -181,7 +181,7 @@ FocusScope {
       // halfway through before settling.
       background: "transparent"
       options: root.leadOptions
-      value: String(Hey.normalizedAlertLead(root.value("alertLeadMinutes", 15)))
+      value: String(Cal.normalizedAlertLead(root.value("alertLeadMinutes", 15)))
       foreground: root.foreground
       fontFamily: root.fontFamily
       fontSize: Style.font.bodySmall
@@ -190,7 +190,7 @@ FocusScope {
     }
 
     Note {
-      text: root.helpFor(root.leadOptions, root.leadHover, String(Hey.normalizedAlertLead(root.value("alertLeadMinutes", 15))))
+      text: root.helpFor(root.leadOptions, root.leadHover, String(Cal.normalizedAlertLead(root.value("alertLeadMinutes", 15))))
     }
 
     Label { text: "TIMES" }
@@ -216,7 +216,7 @@ FocusScope {
     Toggle {
       width: parent.width
       label: "Notifications"
-      description: "Your HEY reminders as desktop notifications."
+      description: "Your events' reminders as desktop notifications."
       checked: root.value("notifications", true) !== false
       foreground: root.foreground
       fontFamily: root.fontFamily
@@ -276,7 +276,7 @@ FocusScope {
             width: pillRow.implicitWidth + Style.space(20)
             height: pillRow.implicitHeight + Style.space(8)
             radius: height / 2
-            color: shown ? Hey.calendarColor(modelData.color, Color.accent) : "transparent"
+            color: shown ? Cal.calendarColor(modelData.color, Color.accent) : "transparent"
             border.width: shown ? (cursor ? 2 : 0) : (cursor ? 2 : 1)
             border.color: cursor ? root.foreground : Qt.darker(root.foreground, 1.8)
 
@@ -287,7 +287,7 @@ FocusScope {
 
               Text {
                 text: parent.parent.shown ? "󰄬" : "󰅖"
-                color: parent.parent.shown ? Hey.calendarInk : Qt.darker(root.foreground, 1.6)
+                color: parent.parent.shown ? Cal.calendarInk : Qt.darker(root.foreground, 1.6)
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.caption
                 anchors.verticalCenter: parent.verticalCenter
@@ -296,7 +296,7 @@ FocusScope {
               Text {
                 textFormat: Text.PlainText
                 text: modelData.name
-                color: parent.parent.shown ? Hey.calendarInk : Qt.darker(root.foreground, 1.6)
+                color: parent.parent.shown ? Cal.calendarInk : Qt.darker(root.foreground, 1.6)
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.bodySmall
                 font.strikeout: !parent.parent.shown
@@ -317,10 +317,8 @@ FocusScope {
     }
 
     Note {
-      text: root.host && root.host.cliMode === "list"
-        ? "Hidden calendars are left out of the grid, the day and the bar. hey-cli "
-          + root.host.cliVersion + " cannot see which calendars are switched off in HEY, so hide them here."
-        : "Hidden calendars are left out of the grid, the day and the bar. Calendars switched off in HEY are already left out."
+      text: "Hidden calendars are left out of the grid, the day and the bar. "
+        + (root.host ? root.host.modeNote() : "")
     }
 
     // ---- Quick add

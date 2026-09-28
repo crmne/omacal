@@ -1,7 +1,10 @@
-# HEY Calendar for Omarchy
+# OmaCal
 
-Omarchy's stock clock and calendar, exactly as it ships, with your
-[HEY](https://hey.com) calendar laid over it.
+Omarchy's stock clock and calendar, exactly as it ships, with your calendar
+laid over it. [HEY](https://hey.com) is the first calendar it reads; others
+plug in as backends (see [Backends](#backends)).
+
+![OmaCal's panel: the month grid with per-calendar chips, and the selected day](screenshots/panel.png)
 
 - **Chips under every day.** One chip per calendar color, with the number of
   that day's events in it. A day with a Work meeting and a dinner shows a
@@ -24,16 +27,16 @@ Omarchy's stock clock and calendar, exactly as it ships, with your
   Repeating events are left to HEY, since deleting by id takes the series.
 - **Notifications.** The reminders you set in HEY arrive as desktop
   notifications. Clicking one opens the meeting link or the event.
-- **Time tracking.** Start and stop HEY's time tracker from today's view.
+- **Time tracking** (HEY). Start and stop HEY's time tracker from today's view.
   Finished tracks show on their day under **Tracked**, with the day's
   total. Stopping one opens its name field right away; any track can be
   renamed by clicking it (HEY names a track by its category, created if
   new) or deleted from its hover button.
-- **Live sync.** A `hey watch` stream refreshes the panel within seconds of
+- **Live sync.** HEY's `hey watch` stream refreshes the panel within seconds of
   a change made anywhere else, with polling as the fallback.
 - **In the bar**, like a macOS menu-bar calendar: an event's name and when
   sit in front of the stock clock (`󰃭 Omarchy Podcast · in 12m`, then
-  `· until 14:30`) from its **earliest HEY reminder** until it ends. A day
+  `· until 14:30`) from its **earliest reminder** until it ends. A day
   ahead if you asked for a day's notice, 30 minutes if 30. Without
   reminders it uses `alertLeadMinutes`; all-day events only show when they
   have a reminder. When several overlap, the bar names one and counts the
@@ -46,9 +49,10 @@ Omarchy's stock clock and calendar, exactly as it ships, with your
 ## Requirements
 
 - Omarchy 4 with the Quattro shell plugin system
-- **hey-cli 1.3.0 or newer**, signed in (`hey setup`). 1.3.0 is the version
+- For the HEY backend:
+  - **hey-cli 1.3.0 or newer**, signed in (`hey setup`). 1.3.0 is the version
   Omarchy installs, so a stock system works as is.
-- `jq` (part of Omarchy)
+  - `jq` (part of Omarchy)
 
 ### hey-cli versions
 
@@ -62,18 +66,38 @@ The version is read once, from `hey --version`, when the shell starts.
 
 ## Install
 
+Review the source first: Omarchy plugins run as unsandboxed code inside the
+shell.
+
 ```bash
-omarchy plugin add https://github.com/crmne/omarchy-hey.git --enable
+omarchy plugin add https://github.com/crmne/omacal.git --enable
 omarchy plugin disable omarchy.clock
 ```
 
-Point the bar's center anchor at it, so the center section stays put when
-hover-only widgets appear:
+OmaCal replaces the stock clock, so the second line takes that one off the
+bar. Point the bar's center anchor at OmaCal so the center section stays put
+when hover-only widgets appear:
 
 ```jsonc
 // ~/.config/omarchy/shell.json
-{ "bar": { "centerAnchor": "crmne.hey-calendar" } }
+{ "bar": { "centerAnchor": "crmne.omacal" } }
 ```
+
+Update with `omarchy plugin update crmne.omacal`. Remove with
+`omarchy plugin remove crmne.omacal`, then `omarchy plugin enable
+omarchy.clock` and set `centerAnchor` back to `omarchy.clock`. Removing it
+touches nothing in your calendar.
+
+## What it runs
+
+Everything goes through the backend's command-line tool; OmaCal makes no
+network requests of its own and stores no credentials. For HEY:
+`hey event week` or `hey event list`, `hey calendar list`, `hey event add`
+and `delete`, `hey timetrack`, and a long-running `hey watch` for live
+sync. Every call is bounded by `timeout` and `head -c`, and takes its input
+as arguments, never as shell text. Event text is length-capped and drawn as
+plain text, and only `https` links are handed to `xdg-open`. It also runs
+`notify-send` for reminders and `hyprctl` to bind the quick-add shortcut.
 
 ## Keys
 
@@ -135,18 +159,38 @@ HEY's day titles, photos and "Sometime this week" are not exposed by
 hey-cli, so they are not here yet. Day titles are in HEY's API
 (`Calendar::DayTitle`), and are the first candidate for a hey-cli addition.
 
+## Backends
+
+A backend is one file in `backends/`: the command lines that read and write
+a calendar service, a probe that says whether (and how) it can run, and the
+capabilities it has (`create`, `delete`, `watch`, `timeTracking`,
+`dayLink`). The panel hides what a backend cannot do.
+
+Backends never parse. Every command prints the standard JSON shapes
+documented at the top of `Calendar.js` (events per week or per span,
+calendars, time tracks), so everything after the command is shared: the
+grid, the day view, repeats, the bar, reminders and notifications. Colors
+can be HEY's color names or `#rrggbb`. `backends/Hey.js` is the reference;
+CalDAV through `khal`, Google through `gcalcli`, and plain `.ics` files are
+the natural next ones.
+
 ## Develop
 
 ```bash
-tests/run                  # Hey.js, in five timezones
+tests/run                  # Calendar.js and the HEY backend, in five timezones
 omarchy plugin validate .
 ```
 
 Plugin code under `~/.config/omarchy/plugins` hot-reloads on save, but not
 through a symlink: when developing from a linked checkout, load changes with
-`omarchy-restart-shell`. `omarchy-shell shell toggle crmne.hey-calendar`
-opens the quick-add card; `omarchy-shell crmne.hey-calendar open` the panel,
-and `omarchy-shell crmne.hey-calendar settings` the panel's settings.
+`omarchy-restart-shell`. `omarchy-shell shell toggle crmne.omacal` opens the
+quick-add card; `omarchy-shell crmne.omacal open` the panel, and
+`omarchy-shell crmne.omacal settings` its settings.
 
-`Model.js` is Omarchy's and stays stock; `Hey.js` holds the HEY data, date
-math and command lines and runs under plain node.
+`Model.js` is Omarchy's and stays stock. `Calendar.js` holds the calendar
+model, and `backends/` the services; both run under plain node.
+
+## License
+
+[MIT](LICENSE). Portions are Omarchy's own clock plugin, also MIT; see
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

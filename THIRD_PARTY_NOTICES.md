@@ -6,4 +6,5 @@ about HEY, are Omarchy's stock clock plugin
 licensed. The first commit of this repository is that plugin, unchanged, so
 `git diff <first commit>` shows exactly what this plugin adds.
 
-`Model.js` is kept byte-for-byte stock. HEY logic lives in `Hey.js`.
+`Model.js` is kept byte-for-byte stock. OmaCal's own logic lives in
+`Calendar.js` and `backends/`.
