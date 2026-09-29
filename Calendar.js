@@ -76,12 +76,12 @@ function normalizeEvent(raw) {
     if (at !== null) reminders.push(at)
   }
 
-  var seriesId = boundedString(raw.id, 32)
-  var occurrenceId = boundedString(raw.occurrence_id, 96)
+  var seriesId = boundedString(raw.id, 1024)
+  var occurrenceId = boundedString(raw.occurrence_id, 1024)
   return {
     // A repeating series shares one id across every day it lands on, so the
     // start is part of the identity: two Mondays of a standup are two rows.
-    key: (occurrenceId || seriesId) + "@" + startsAt,
+    key: (typeof raw.calendar_id === "string" ? raw.calendar_id + ":" : "") + (occurrenceId || seriesId) + "@" + startsAt,
     seriesId: seriesId,
     occurrenceId: occurrenceId,
     recurring: raw.recurring === true,
@@ -90,7 +90,8 @@ function normalizeEvent(raw) {
     startsAt: startsAt,
     endsAt: boundedString(raw.ends_at, 64) || startsAt,
     location: boundedString(raw.location, 256),
-    calendarId: Number(raw.calendar_id) || 0,
+    calendarId: typeof raw.calendar_id === "string" ? boundedString(raw.calendar_id, 1024) : Number(raw.calendar_id) || 0,
+    writable: raw.writable !== false,
     calendar: boundedString(raw.calendar, 128),
     color: boundedString(raw.color, 32).toLowerCase(),
     joinUrl: safeUrl(raw.join_url),
@@ -170,9 +171,9 @@ function parseCalendars(raw) {
   var calendars = []
   for (var i = 0; i < parsed.length && calendars.length < 100; i++) {
     var c = parsed[i]
-    if (!c || !(Number(c.id) > 0)) continue
+    if (!c || !(typeof c.id === "string" ? c.id.length > 0 : Number(c.id) > 0)) continue
     calendars.push({
-      id: Number(c.id),
+      id: typeof c.id === "string" ? boundedString(c.id, 1024) : Number(c.id),
       name: boundedString(c.name, 128),
       color: boundedString(c.color, 32).toLowerCase(),
       kind: boundedString(c.kind, 32),
@@ -1104,7 +1105,8 @@ function validateEvent(form) {
   if (!isDayKey(f.date)) return { error: "Pick a day." }
 
   var request = { title: title, date: f.date, allDay: f.allDay === true, startTime: "", endTime: "",
-    endDate: f.date, calendarId: Number(f.calendarId) > 0 ? Math.round(Number(f.calendarId)) : 0,
+    endDate: f.date, calendarId: typeof f.calendarId === "string" ? boundedString(f.calendarId, 1024)
+      : (Number(f.calendarId) > 0 ? Math.round(Number(f.calendarId)) : 0),
     location: String(f.location || "").replace(/^\s+|\s+$/g, "").substr(0, 256), remind: "" }
 
   if (request.allDay) {

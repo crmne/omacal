@@ -6,4 +6,6 @@ set -e
 cd "$(dirname "$0")"
 for tz in UTC America/Los_Angeles Europe/Berlin Asia/Tokyo Pacific/Kiritimati; do
   TZ=$tz node calendar.test.js
+  TZ=$tz node google.test.js
 done
+PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -p 'test_*.py'

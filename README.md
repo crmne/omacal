@@ -1,8 +1,58 @@
 # OmaCal
 
-Omarchy's stock clock and calendar, exactly as it ships, with your calendar
-laid over it. [HEY](https://hey.com) is the first calendar it reads; others
-plug in as backends (see [Backends](#backends)).
+Omarchy's stock clock and calendar with your calendar laid over it.
+This fork supports [HEY](https://hey.com) and Google Calendar through the
+Google Workspace CLI (`gws`). HEY remains the default.
+
+## Google Calendar
+
+Requires Python 3.9 or newer and [gws](https://github.com/googleworkspace/cli)
+(tested with 0.8.0), authenticated with Calendar access. Run `gws auth login`
+if needed, then check `gws auth status` for the account you want to use.
+The plugin uses gws's existing credential storage. It does not store tokens.
+
+Set these fields on the `crmne.omacal` entry in
+`~/.config/omarchy/shell.json`:
+
+```json
+{
+  "id": "crmne.omacal",
+  "backend": "google",
+  "googleAccount": "you@example.com"
+}
+```
+
+Keep your other widget settings. Restart with `omarchy restart shell` after
+changing the backend or account. Every operation checks that the signed-in
+gws account matches `googleAccount`; the plugin will not choose an account
+for you.
+
+Google support includes:
+
+- Selected calendars, calendar colors, and read-only calendar permissions.
+- Timed and all-day events, multi-day events, and server-expanded recurring
+  instances, including changed or cancelled occurrences.
+- Meet links and other video-conference links.
+- Popup reminders from event overrides or calendar defaults. Email reminders
+  are left to Google. All-day reminder times use the calendar's timezone.
+- New events through the panel and quick-add card. Times entered in the form
+  use this computer's local timezone. A blank end time means one hour later.
+- Deletion of writable, non-repeating events without guests. Use Google
+  Calendar for repeating events or events with guests. The server state is
+  checked again before deletion. New events have no guests and writes use
+  `sendUpdates=none`.
+
+Google changes are polled at `refreshIntervalSec` (300 seconds by default).
+There is no streaming watch or Google time tracking. Refresh the panel to see
+an external change sooner. Quick-add changes appear on the next refresh.
+Errors retain cached events rather than showing a failed fetch as an empty
+calendar. If a write times out, refresh before trying it again.
+
+The implementation uses the [Google Calendar API](https://developers.google.com/workspace/calendar/api/v3/reference/events).
+[x3me/omacal](https://github.com/x3me/omacal) is a separate desktop application;
+its reminder rules and timezone handling were consulted as a reference, not
+copied as a dependency.
+
 
 ![OmaCal's panel: the month grid with per-calendar chips, and the selected day](screenshots/panel.png)
 
@@ -181,13 +231,16 @@ documented at the top of `Calendar.js` (events per week or per span,
 calendars, time tracks), so everything after the command is shared: the
 grid, the day view, repeats, the bar, reminders and notifications. Colors
 can be HEY's color names or `#rrggbb`. `backends/Hey.js` is the reference;
-CalDAV through `khal`, Google through `gcalcli`, and plain `.ics` files are
-the natural next ones.
+This fork adds `Google.js` and the standard-library Python helper `google.py`.
+The helper calls `gws` with JSON arguments, follows pagination, and rejects
+partial results that exceed its limits. CalDAV and plain `.ics` files remain
+possible future backends.
 
 ## Develop
 
 ```bash
-tests/run                  # Calendar.js and the HEY backend, in five timezones
+tests/run                  # Calendar/HEY/Google model tests and mocked Google CLI tests
+tests/qml-smoke            # Real QML components, offline gws fixture; requires Omarchy/Wayland
 omarchy plugin validate .
 ```
 

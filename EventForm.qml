@@ -28,7 +28,7 @@ Item {
   property string todayKey: ""
   readonly property string resolvedDay: Cal.parseDay(dateField.text, todayKey !== "" ? todayKey : Cal.keyForDate(new Date()))
   property var calendars: []
-  property int defaultCalendarId: 0
+  property var defaultCalendarId: 0
   property bool busy: false
   // `error` comes from whoever runs the command; `localError` is the form's
   // own complaint about what was typed, and wins while it stands.
@@ -49,7 +49,7 @@ Item {
   property alias startInput: startField.text
   property alias endInput: endField.text
   property alias locationInput: locationField.text
-  property int calendarId: 0
+  property var calendarId: 0
   property bool allDay: false
   property string remind: "30m"
 
@@ -204,7 +204,7 @@ Item {
     event.accepted = true
   }
 
-  onCalendarsChanged: if (root.calendarId === 0) root.calendarId = pickCalendar(root.defaultCalendarId)
+  onCalendarsChanged: root.calendarId = pickCalendar(root.calendarId || root.defaultCalendarId)
 
   Column {
     id: formColumn

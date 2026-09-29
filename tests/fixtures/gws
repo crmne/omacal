@@ -1,0 +1,30 @@
+#!/usr/bin/env python3
+"""Offline gws fixture for command and QML integration tests."""
+import json
+import sys
+
+args = sys.argv[1:]
+calendar = {"id": "calendar@example.test", "summary": "Test calendar", "accessRole": "owner",
+            "selected": True, "timeZone": "America/Chicago", "backgroundColor": "#abcdef"}
+if args == ["auth", "status"]:
+    value = {"user": "calendar@example.test", "token_valid": True}
+else:
+    params = json.loads(args[args.index("--params") + 1])
+    operation = args[:3]
+    if operation == ["calendar", "calendarList", "list"]:
+        value = {"items": [calendar]}
+    elif operation == ["calendar", "events", "list"]:
+        day = params["timeMin"][:10]
+        value = {"items": [{"id": "fixture-event", "summary": "Fixture meeting",
+            "start": {"dateTime": day + "T09:00:00-05:00"},
+            "end": {"dateTime": day + "T10:00:00-05:00"}}]}
+    elif operation == ["calendar", "calendarList", "get"]:
+        value = calendar
+    elif operation == ["calendar", "events", "insert"]:
+        body = json.loads(args[args.index("--json") + 1])
+        assert params["calendarId"] == calendar["id"]
+        assert body["summary"] == "Fixture write"
+        value = {"id": "new-event"}
+    else:
+        sys.exit(2)
+print(json.dumps(value))

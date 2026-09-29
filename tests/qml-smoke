@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# Requires an installed Omarchy shell and Quickshell. Uses only an offline gws fixture.
+set -euo pipefail
+repo=$(cd "$(dirname "$0")/.." && pwd)
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT
+shell_dir=${OMARCHY_PATH:-/usr/share/omarchy}/shell
+ln -s "$shell_dir/Commons" "$work/Commons"
+ln -s "$shell_dir/Ui" "$work/Ui"
+ln -s "$repo" "$work/plugin"
+cp "$repo/tests/qml-smoke.qml" "$work/shell.qml"
+QT_QPA_PLATFORM=wayland PATH="$repo/tests/fixtures:$PATH" timeout 30 quickshell -p "$work" --no-color >"$work/log" 2>&1 || { cat "$work/log"; exit 1; }
+if grep -E 'TypeError|ReferenceError|SyntaxError|Error:|is not a function|is not defined|Failed to load' "$work/log"; then
+  exit 1
+fi
+grep 'OMACAL_QML_SMOKE_OK' "$work/log"

@@ -4,7 +4,8 @@ import Quickshell.Io
 import Quickshell.Wayland
 import qs.Commons
 import "Calendar.js" as Cal
-import "backends/Hey.js" as Backend
+import "backends/Hey.js" as Hey
+import "backends/Google.js" as Google
 
 // The quick-add card: the calendar panel's new-event form on its own, in
 // the middle of the screen, a shortcut away (Alt+Shift+Space by default).
@@ -27,6 +28,12 @@ Item {
   property bool busy: false
   property string error: ""
   property string backendMode: ""
+  readonly property var backend: {
+    var entry = widgetEntry() || {}
+    return entry.backend === "google"
+      ? Google.configured(decodeURIComponent(String(Qt.resolvedUrl("backends/google.py")).replace(/^file:\/\//, "")), String(entry.googleAccount || ""))
+      : Hey
+  }
 
   function open(payload) {
     root.error = ""
@@ -64,13 +71,13 @@ Item {
 
   function lastCalendarId() {
     var entry = widgetEntry()
-    return entry ? (Number(entry.lastCalendarId) || 0) : 0
+    return entry ? (entry.lastCalendarId || 0) : 0
   }
 
   function rememberCalendar(id) {
     var entry = widgetEntry()
     if (!entry || !root.shell || typeof root.shell.updateEntryInline !== "function") return
-    if (Number(entry.lastCalendarId) === id) return
+    if (entry.lastCalendarId === id) return
     var next = {}
     for (var key in entry) next[key] = entry[key]
     next.lastCalendarId = id
@@ -84,17 +91,16 @@ Item {
       root.error = checked.error
       return
     }
-    if (Number(formValues.calendarId) > 0) rememberCalendar(Number(formValues.calendarId))
+    if (formValues.calendarId) rememberCalendar(formValues.calendarId)
     root.error = ""
     root.busy = true
-    addProcess.finished = false
-    addProcess.command = Backend.createCommand(checked.request)
+    addProcess.command = root.backend.createCommand(checked.request)
     addProcess.running = true
   }
 
   function finishAdd(exitCode, stdout) {
     root.busy = false
-    var result = Backend.writeResult(exitCode, stdout)
+    var result = root.backend.writeResult(exitCode, stdout)
     if (result.ok) {
       dismiss()
       return
@@ -105,10 +111,10 @@ Item {
   Process {
     id: versionProcess
     running: false
-    command: Backend.probeCommand
+    command: root.backend.probeCommand
     stdout: StdioCollector {
       onStreamFinished: {
-        var probed = Backend.probe(text)
+        var probed = root.backend.probe(text)
         root.backendMode = probed.mode
         if (root.backendMode === "") root.error = probed.error
       }
@@ -118,7 +124,7 @@ Item {
   Process {
     id: calendarsProcess
     running: false
-    command: Backend.calendarsCommand
+    command: root.backend.calendarsCommand
     stdout: StdioCollector {
       onStreamFinished: {
         var parsed = Cal.parseCalendars(text)
@@ -131,16 +137,8 @@ Item {
     id: addProcess
     running: false
     command: []
-    property bool finished: false
-    stdout: StdioCollector {
-      onStreamFinished: {
-        addProcess.finished = true
-        root.finishAdd(addProcess.exitCode, text)
-      }
-    }
-    onExited: function(exitCode) {
-      if (!addProcess.finished && root.busy) root.finishAdd(exitCode, "")
-    }
+    stdout: StdioCollector { id: addOutput; waitForEnd: true }
+    onExited: function(exitCode) { root.finishAdd(exitCode, addOutput.text) }
   }
 
   PanelWindow {

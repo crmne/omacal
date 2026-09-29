@@ -5,7 +5,7 @@
   "version": "1.0.1",
   "author": "Carmine Paolino",
   "license": "MIT",
-  "description": "Omarchy's stock clock and calendar with your calendar laid over it: per-calendar event chips on the month grid, a day view, new events from the panel or a quick-add shortcut, reminders as notifications, the next event in the bar, and time tracking. HEY is the first backend.",
+  "description": "Omarchy's stock clock and calendar with your calendar laid over it: per-calendar event chips on the month grid, a day view, new events from the panel or a quick-add shortcut, reminders as notifications, the next event in the bar, and time tracking. Supports HEY and Google Calendar through gws.",
   "kinds": [
     "service",
     "bar-widget",
@@ -30,6 +30,8 @@
     "allowMultiple": false,
     "defaultSection": "center",
     "defaults": {
+      "backend": "hey",
+      "googleAccount": "",
       "alertLeadMinutes": 15,
       "notifications": true,
       "liveSync": true,
@@ -39,6 +41,19 @@
       "barEvent": "soon"
     },
     "schema": [
+      {
+        "key": "backend",
+        "type": "enum",
+        "label": "Calendar service (restart shell after changing)",
+        "options": ["hey", "google"],
+        "defaultValue": "hey"
+      },
+      {
+        "key": "googleAccount",
+        "type": "string",
+        "label": "Google account email (must match gws auth status)",
+        "defaultValue": ""
+      },
       {
         "key": "barEvent",
         "type": "enum",
@@ -56,9 +71,9 @@
       {
         "key": "notifications",
         "type": "boolean",
-        "label": "Show HEY reminders as notifications",
+        "label": "Show calendar reminders as notifications",
         "defaultValue": true,
-        "description": "Uses the reminders set on each event in HEY."
+        "description": "Uses event reminders. Google uses popup reminders, including calendar defaults."
       },
       {
         "key": "quickAddShortcut",
