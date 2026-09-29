@@ -287,6 +287,17 @@ test("due reminders fire once, and never for what came due before start", functi
   assert.strictEqual(Hey.reminderLead(e, now), "In 30 min")
 })
 
+test("a reminder carries a safe marker and a calendar-coloured icon", function() {
+  var e = Hey.normalizeEvent({ id: 7, title: "Stand-up; rm -rf /", starts_at: "2026-09-29T09:30:00Z",
+    ends_at: "2026-09-29T09:45:00Z", color: "blue", reminders: ["2026-09-29T09:15:00Z"] })
+  var cmd = Hey.notifyCommand(e, e.startMs - 15 * 60000, true, "", e.reminders[0])
+  var marker = cmd[7], iconName = cmd[8], svg = cmd[9]
+  assert.ok(/^[A-Za-z0-9_-]+$/.test(marker), marker)
+  assert.ok(/^icon-6baffc-\d{1,2}\.svg$/.test(iconName), iconName)
+  assert.ok(svg.indexOf('fill="#6baffc"') !== -1)
+  assert.strictEqual(cmd[4], "Stand-up; rm -rf /")
+})
+
 test("declined events never notify", function() {
   var now = Date.UTC(2026, 8, 28, 10, 30)
   var e = Hey.normalizeEvent({ id: 1, title: "Nope", starts_at: "2026-09-28T11:00:00Z", status: "declined",

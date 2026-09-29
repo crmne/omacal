@@ -267,7 +267,7 @@ BarWidget {
     for (var i = 0; i < due.length; i++) {
       shown[due[i].key] = now
       Quickshell.execDetached(Cal.notifyCommand(due[i].event, now, root.hour24,
-        root.dayUrl(Cal.eventDayKeys(due[i].event)[0] || "")))
+        root.dayUrl(Cal.eventDayKeys(due[i].event)[0] || ""), due[i].remindMs))
     }
     // Forgets what is long past, so the set does not grow for as long as the
     // shell runs.

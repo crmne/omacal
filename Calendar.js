@@ -931,18 +931,57 @@ function notificationBody(event, nowMs, hour24) {
 // The notification, and what to open if it is clicked. notify-send waits for
 // the answer, which is why this runs detached. The text and the link are
 // arguments, never interpolated.
+//
+// Every monitor's bar runs its own widget, and each would send the same
+// reminder. The first to create the reminder's marker directory claims it
+// (mkdir either creates or fails, atomically); the rest stay quiet. Markers
+// live in the runtime directory and are swept after two days.
+//
+// The icon is a small calendar page in the event's calendar colour with its
+// day on it, written once per colour and day next to the markers.
 var notifyScript = [
-  "choice=$(notify-send --app-name='OmaCal' --icon=x-office-calendar"
+  "dir=\"${XDG_RUNTIME_DIR:-/tmp}/omacal\"",
+  "mkdir -p \"$dir/shown\" || exit 0",
+  "find \"$dir/shown\" -mindepth 1 -maxdepth 1 -mmin +2880 -exec rm -rf {} + 2>/dev/null",
+  "mkdir \"$dir/shown/$4\" 2>/dev/null || exit 0",
+  "icon=\"$dir/$5\"",
+  "[ -s \"$icon\" ] || printf '%s' \"$6\" > \"$icon\"",
+  "choice=$(notify-send --app-name='OmaCal' --icon=\"$icon\""
     + " --action=default=Open \"$1\" \"$2\" 2>/dev/null)",
   "if [ \"$choice\" = default ] && [ -n \"$3\" ]; then xdg-open \"$3\" >/dev/null 2>&1; fi"
 ].join("\n")
 
+// A calendar page: the calendar's colour, a darker band with two rings,
+// and the day of the month in the calendar ink.
+function notificationIcon(color, day) {
+  var fill = calendarColor(color, todayColor)
+  var number = String(Math.max(1, Math.min(31, Math.round(Number(day) || 1))))
+  return '<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">'
+    + '<rect x="10" y="16" width="108" height="104" rx="22" fill="' + fill + '"/>'
+    + '<path d="M10 38a22 22 0 0 1 22-22h64a22 22 0 0 1 22 22v8H10z" fill="' + calendarInk + '" fill-opacity="0.22"/>'
+    + '<rect x="36" y="6" width="10" height="24" rx="5" fill="' + calendarInk + '"/>'
+    + '<rect x="82" y="6" width="10" height="24" rx="5" fill="' + calendarInk + '"/>'
+    + '<text x="64" y="102" text-anchor="middle" font-family="Inter, sans-serif" font-weight="700"'
+    + ' font-size="52" fill="' + calendarInk + '">' + number + '</text></svg>'
+}
+
+// A marker name no event text can escape from: only letters, digits, _ and -.
+function reminderMarker(key) {
+  return String(key || "").replace(/[^A-Za-z0-9_-]/g, "_").substr(0, 200)
+}
+
 // `fallbackLink` is where a click goes when the event has no link of its
-// own: the backend's page for its day, if it has one.
-function notifyCommand(event, nowMs, hour24, fallbackLink) {
+// own: the backend's page for its day, if it has one. `remindMs` names the
+// reminder, so each of an event's reminders is claimed separately.
+function notifyCommand(event, nowMs, hour24, fallbackLink, remindMs) {
   var link = event.joinUrl || event.url || safeUrl(fallbackLink)
+  var firstDay = eventDayKeys(event)[0] || keyForDate(new Date(nowMs))
+  var day = parseInt(firstDay.substr(8, 2), 10)
+  var color = calendarColor(event.color, todayColor).replace("#", "")
   return ["bash", "-c", notifyScript, "omacal",
-    event.title, notificationBody(event, nowMs, hour24), link]
+    event.title, notificationBody(event, nowMs, hour24), link,
+    reminderMarker(reminderKey(event, remindMs === undefined ? nowMs : remindMs)),
+    "icon-" + color + "-" + day + ".svg", notificationIcon(event.color, day)]
 }
 
 // ---------------------------------------------------------------------------
@@ -1291,6 +1330,8 @@ if (typeof module !== "undefined") {
     reminderLead: reminderLead,
     notificationBody: notificationBody,
     notifyCommand: notifyCommand,
+    notificationIcon: notificationIcon,
+    reminderMarker: reminderMarker,
     parseClock: parseClock,
     parseDay: parseDay,
     nudgeClock: nudgeClock,
