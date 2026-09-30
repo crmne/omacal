@@ -18,7 +18,9 @@ plug in as backends (see [Backends](#backends)).
   title, day, calendar, all-day or a time range, place, reminder. Days and
   times are typed loosely: `fri`, `tomorrow`, `next mon`, `3 oct` for the
   day, `9`, `930`, `9:30pm`, `21.30` for times. An end before the start
-  means the next morning.
+  means the next morning. Times are this machine's local time; type a city
+  in the zone field (`new york`, `tokyo`) to write them in another zone, as
+  in HEY's own form.
 - **Quick add from anywhere.** **Alt+Shift+Space** opens the same form as a
   card in the middle of the screen, like OmaTasks' quick add. The shortcut
   is bound in Hyprland by the plugin, never over one that is already taken,
@@ -122,7 +124,7 @@ where the focus is.
 | --- | --- |
 | `Tab` / `Shift+Tab` | Next / previous field, the calendar and reminder rows included |
 | `←` `→` | On the calendar row: switch calendar. On the reminder row: switch reminder. On all day: toggle |
-| `↑` `↓` | In a time: 15 minutes earlier or later. In the day: a day (`Shift`: a week) |
+| `↑` `↓` | In a time: 15 minutes earlier or later. In the day: a day (`Shift`: a week). In the zone: the previous or next match |
 | `Alt+←` `Alt+→` | Switch calendar, from any field |
 | `Alt+↑` `Alt+↓` | Switch reminder, from any field |
 | `Alt+A` | Toggle all day, from any field |

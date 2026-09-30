@@ -222,7 +222,9 @@ function createCommand(request) {
     args.push("--all-day")
     if (r.endDate && r.endDate !== r.date) args.push("--ends-on", r.endDate)
   } else {
-    args.push("--start-time", r.startTime)
+    // Every hey-cli from 1.3.0 takes --time-zone; without it the clock
+    // times land in UTC or the HEY account's zone (see Calendar.js).
+    args.push("--start-time", r.startTime, "--time-zone", r.timeZone)
     if (r.endDate && r.endDate !== r.date) args.push("--ends-on", r.endDate)
     if (r.endTime) args.push("--end-time", r.endTime)
   }

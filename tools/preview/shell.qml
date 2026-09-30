@@ -216,6 +216,10 @@ ShellRoot {
         calendars: shell.sampleCalendars
         defaultCalendarId: 1
         foreground: Color.popups.text
+        // A fixed zone list, so the render does not depend on this machine's.
+        loadZones: false
+        localZone: "Europe/Berlin"
+        zones: ["America/New_York", "Asia/Tokyo", "Europe/Berlin", "Europe/London", "UTC"]
       }
     }
   }

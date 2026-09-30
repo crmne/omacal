@@ -1131,10 +1131,93 @@ function suggestedStart(dayKey, now) {
 
 var reminderChoices = ["", "10m", "30m", "1h", "1d"]
 
+// ---------------------------------------------------------------------------
+// Time zones
+// ---------------------------------------------------------------------------
+//
+// A timed event is always written with the zone its clock times are in.
+// Left to itself, hey-cli up to 1.7 sends no zone on a machine without $TZ
+// (Go calls that zone "Local", which names nothing HEY knows), and HEY reads
+// a zoneless time as UTC: 18:30 typed in Berlin was stored as 20:30. Later
+// hey-cli uses the HEY account's zone, which is not this machine's while
+// travelling. So the form names one: this machine's, unless another is
+// picked, the way HEY's own event form offers a zone.
+
+// Prints this machine's IANA zone on the first line (empty when it cannot
+// tell), then every zone name it knows, one per line.
+var zonesCommand = ["sh", "-c",
+  "z=''; case \"${TZ#:}\" in */*) z=${TZ#:} ;; esac; " +
+  "[ -n \"$z\" ] || z=$(timedatectl show -p Timezone --value 2>/dev/null); " +
+  "[ -n \"$z\" ] || z=$(readlink -f /etc/localtime 2>/dev/null | sed -n 's|.*/zoneinfo/||p'); " +
+  "printf '%s\\n' \"$z\"; " +
+  "timedatectl list-timezones 2>/dev/null || " +
+  "(cd /usr/share/zoneinfo 2>/dev/null && find . -type f | sed 's|^\\./||' | sort)"]
+
+// An IANA name as HEY takes it: Area/Location (Europe/Berlin,
+// America/Argentina/Buenos_Aires), or UTC.
+function isZoneName(name) {
+  var text = String(name || "")
+  return text === "UTC" || /^[A-Z][A-Za-z]+(\/[A-Za-z0-9_+-]+)+$/.test(text)
+}
+
+// zonesCommand's output as { local, zones }: local is "" when the machine
+// did not say. The backward-compatible aliases (posix/, right/, Etc/) and
+// bare names are left out, as HEY's own picker does.
+function parseZones(output) {
+  var lines = String(output || "").split("\n")
+  var local = String(lines[0] || "").replace(/^\s+|\s+$/g, "")
+  var seen = {}
+  var zones = []
+  for (var i = 1; i < lines.length; i++) {
+    var name = lines[i].replace(/^\s+|\s+$/g, "")
+    if (!isZoneName(name) || seen[name]) continue
+    if (/^(posix|right|Etc|SystemV)\//.test(name)) continue
+    seen[name] = true
+    zones.push(name)
+  }
+  if (!seen.UTC) zones.push("UTC")
+  if (isZoneName(local) && !seen[local]) zones.push(local)
+  zones.sort()
+  return { local: isZoneName(local) ? local : "", zones: zones }
+}
+
+// The zones a typed filter could mean, best first: the name itself, then a
+// city that starts with it ("new y" is America/New_York), then any part
+// that does, then any name containing it. Spaces match underscores.
+// Among equals the shorter city comes first: "lon" is London, not Longyearbyen.
+function matchZones(zones, query, limit) {
+  var q = String(query || "").replace(/^\s+|\s+$/g, "").toLowerCase().replace(/\s+/g, "_")
+  if (q === "") return []
+  var ranked = []
+  for (var i = 0; i < (zones || []).length; i++) {
+    var name = zones[i]
+    var lower = name.toLowerCase()
+    var parts = lower.split("/")
+    var rank = -1
+    if (lower === q) rank = 0
+    else if (parts[parts.length - 1].indexOf(q) === 0) rank = 1
+    else if (lower.indexOf(q) === 0 || parts.some(function(p) { return p.indexOf(q) === 0 })) rank = 2
+    else if (lower.indexOf(q) !== -1) rank = 3
+    if (rank !== -1) ranked.push({ name: name, rank: rank, city: parts[parts.length - 1].length })
+  }
+  ranked.sort(function(a, b) {
+    return a.rank - b.rank || a.city - b.city || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)
+  })
+  var out = []
+  for (var j = 0; j < ranked.length && (limit === undefined || j < limit); j++) out.push(ranked[j].name)
+  return out
+}
+
+// "America/New_York" reads as "America/New York".
+function zoneLabel(name) {
+  return String(name || "").replace(/_/g, " ")
+}
+
 // Checks the new-event form and turns it into the request a backend's
 // createCommand takes: { title, date, allDay, startTime, endTime, endDate,
-// calendarId, location, remind }, times as HH:MM, the end date worked out.
-// Returns { error } or { request }.
+// timeZone, calendarId, location, remind }, times as HH:MM in timeZone, the
+// end date worked out. A timed event must name its zone (the form passes
+// this machine's unless another is picked). Returns { error } or { request }.
 function validateEvent(form) {
   var f = form || {}
   var title = String(f.title || "").replace(/^\s+|\s+$/g, "")
@@ -1143,7 +1226,7 @@ function validateEvent(form) {
   if (!isDayKey(f.date)) return { error: "Pick a day." }
 
   var request = { title: title, date: f.date, allDay: f.allDay === true, startTime: "", endTime: "",
-    endDate: f.date, calendarId: Number(f.calendarId) > 0 ? Math.round(Number(f.calendarId)) : 0,
+    endDate: f.date, timeZone: "", calendarId: Number(f.calendarId) > 0 ? Math.round(Number(f.calendarId)) : 0,
     location: String(f.location || "").replace(/^\s+|\s+$/g, "").substr(0, 256), remind: "" }
 
   if (request.allDay) {
@@ -1152,6 +1235,10 @@ function validateEvent(form) {
       request.endDate = f.endDate
     }
   } else {
+    var zone = String(f.timeZone || "")
+    if (zone === "") return { error: "Pick a time zone: I could not tell this machine's." }
+    if (!isZoneName(zone)) return { error: "“" + zone + "” is not a time zone I know." }
+    request.timeZone = zone
     var start = parseClock(f.startTime)
     if (start === "") return { error: "The start time is not a time." }
     request.startTime = start
@@ -1339,6 +1426,11 @@ if (typeof module !== "undefined") {
     cycle: cycle,
     suggestedStart: suggestedStart,
     validateEvent: validateEvent,
+    zonesCommand: zonesCommand,
+    isZoneName: isZoneName,
+    parseZones: parseZones,
+    matchZones: matchZones,
+    zoneLabel: zoneLabel,
     formatTime: formatTime,
     eventRangeLabel: eventRangeLabel,
     eventTimeOnDay: eventTimeOnDay,

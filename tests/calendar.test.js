@@ -350,7 +350,7 @@ test("arrow keys nudge times on a quarter-hour grid, and wrap lists", function()
 
 // validateEvent checks the form; the backend turns the request into argv.
 function build(form) {
-  var checked = Hey.validateEvent(form)
+  var checked = Hey.validateEvent(Object.assign({ timeZone: "Europe/Berlin" }, form))
   return checked.error ? checked : { command: Backend.createCommand(checked.request) }
 }
 
@@ -371,8 +371,46 @@ test("an end before the start is the next morning", function() {
 
 test("the form refuses what HEY would", function() {
   assert.ok(Hey.validateEvent({ title: " ", date: "2026-09-28" }).error)
-  assert.ok(Hey.validateEvent({ title: "X", date: "2026-09-28", startTime: "nope" }).error)
-  assert.ok(Hey.validateEvent({ title: "X", date: "2026-09-28", startTime: "10:00", endTime: "10:00" }).error)
+  assert.ok(Hey.validateEvent({ title: "X", date: "2026-09-28", startTime: "nope", timeZone: "UTC" }).error)
+  assert.ok(Hey.validateEvent({ title: "X", date: "2026-09-28", startTime: "10:00", endTime: "10:00", timeZone: "UTC" }).error)
+})
+
+// hey-cli up to 1.7 sends no zone when $TZ is unset, and HEY then reads the
+// clock times as UTC: 18:30 in Berlin became 20:30.
+test("a timed event always names the zone its times are in", function() {
+  var args = build({ title: "Palestra", date: "2026-09-30", startTime: "18:30", endTime: "20:00" }).command
+  assert.deepStrictEqual(args.slice(args.indexOf("--time-zone"), args.indexOf("--time-zone") + 2), ["--time-zone", "Europe/Berlin"])
+  args = build({ title: "Call", date: "2026-09-30", startTime: "9", timeZone: "America/New_York" }).command
+  assert.strictEqual(args[args.indexOf("--time-zone") + 1], "America/New_York")
+})
+
+test("a timed event with no zone, or a made-up one, is refused rather than guessed", function() {
+  assert.ok(Hey.validateEvent({ title: "X", date: "2026-09-30", startTime: "18:30", timeZone: "" }).error)
+  assert.ok(Hey.validateEvent({ title: "X", date: "2026-09-30", startTime: "18:30", timeZone: "Berlin" }).error)
+  assert.ok(Hey.validateEvent({ title: "X", date: "2026-09-30", startTime: "18:30", timeZone: "--help" }).error)
+})
+
+test("an all-day event needs no zone and sends none", function() {
+  var args = build({ title: "Holiday", date: "2026-09-30", allDay: true, timeZone: "" }).command
+  assert.strictEqual(args.indexOf("--time-zone"), -1)
+})
+
+test("the zone list reads the machine's zone and skips aliases", function() {
+  var parsed = Hey.parseZones("Europe/Berlin\nAmerica/New_York\nEurope/Berlin\nEtc/GMT+2\nposix/Europe/Rome\nGMT\nAmerica/Argentina/Buenos_Aires\n")
+  assert.strictEqual(parsed.local, "Europe/Berlin")
+  assert.deepStrictEqual(parsed.zones, ["America/Argentina/Buenos_Aires", "America/New_York", "Europe/Berlin", "UTC"])
+  assert.strictEqual(Hey.parseZones("\nEurope/Rome\n").local, "")
+})
+
+test("a typed zone filter puts the likeliest city first", function() {
+  var zones = ["America/New_York", "America/Argentina/Buenos_Aires", "Asia/Tokyo", "Europe/Berlin", "Europe/Rome", "UTC"]
+  assert.deepStrictEqual(Hey.matchZones(zones, "new y"), ["America/New_York"])
+  assert.strictEqual(Hey.matchZones(zones, "buenos")[0], "America/Argentina/Buenos_Aires")
+  assert.strictEqual(Hey.matchZones(zones, "europe", 1).length, 1)
+  assert.strictEqual(Hey.matchZones(zones, "rom")[0], "Europe/Rome")
+  assert.strictEqual(Hey.matchZones(["Arctic/Longyearbyen", "Europe/London"], "lon")[0], "Europe/London")
+  assert.deepStrictEqual(Hey.matchZones(zones, "  "), [])
+  assert.strictEqual(Hey.zoneLabel("America/New_York"), "America/New York")
 })
 
 test("repeating events are never deleted by series id", function() {
