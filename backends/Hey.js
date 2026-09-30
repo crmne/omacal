@@ -12,6 +12,8 @@ var info = {
   name: "HEY",
   capabilities: {
     create: true,
+    // Title, day, times, zones, place, calendar and reminder, in the panel.
+    edit: true,
     // One-off events only: deleting by id would take a whole series.
     delete: true,
     // `hey watch` streams every calendar change as it happens.
@@ -119,6 +121,7 @@ var eventProjection = "map({"
   + " url: (.edit_url // \"\"),"
   + " status: (.attendance_status // \"\"),"
   + " reminders: [(.reminders // [])[] | .remind_at // empty],"
+  + " reminder_leads: [(.reminders // [])[] | .duration // empty],"
   + " repeat_kind: ((.recurrence_schedule // {}).kind // \"\"),"
   + " repeat_description: ((.recurrence_schedule // {}).description // \"\")"
   + "})"
@@ -258,6 +261,64 @@ var acrossZonesScript =
   "end=$(TZ=$tz date -d \"@$e\" '+%F %H:%M') || fail 'Could not read the end time.'; " +
   "exec \"$@\" --ends-on \"${end% *}\" --end-time \"${end#* }\""
 
+// hey-cli edits one day of a series with --occurrence from 1.6.0 on;
+// before that, `hey event edit` takes a series whole.
+var occurrenceCliVersion = [1, 6, 0]
+
+function editsOccurrences(version) {
+  var parsed = parseCliVersion(version)
+  return parsed === null ? String(version || "") === "" : compareVersions(parsed, occurrenceCliVersion) >= 0
+}
+
+// `request` is Calendar.editRequest's: { event, scope, changes }. Only the
+// changed fields become flags; `hey event edit` reads the event and sends
+// the rest back as it was. Empty when the event cannot be named safely.
+function editCommand(request) {
+  var r = request || {}
+  var event = r.event || {}
+  var changes = r.changes || {}
+  var id = /^\d+$/.test(String(event.seriesId || "")) ? String(event.seriesId) : ""
+  var parent = /^\d+$/.test(String(event.parentId || "")) ? String(event.parentId) : ""
+  var occurrence = /^[0-9A-Za-z_-]+$/.test(String(event.occurrenceId || "")) ? String(event.occurrenceId) : ""
+  var target = []
+  if (!event.recurring) target = id ? [id] : []
+  else if (r.scope === "one") {
+    // A day HEY wrote out edits alone by its own id; any other day is the
+    // series' occurrence.
+    if (parent !== "" && parent !== id && id !== "") target = [id]
+    else if (occurrence !== "") target = [parent || id, "--occurrence", occurrence, "--apply-to", "current"]
+  } else {
+    target = (parent || id) ? [parent || id] : []
+  }
+  if (target.length === 0 || target[0] === "") return []
+
+  var args = ["timeout", "-k", "3", "40", "hey", "event", "edit"].concat(target)
+  if (changes.title !== undefined) args.push("--title", changes.title)
+  if (changes.location !== undefined) args.push("--location", changes.location)
+  if (changes.calendarId) args.push("--calendar", String(Math.round(Number(changes.calendarId))))
+  if (changes.remind) args.push("--remind", changes.remind)
+
+  var s = changes.schedule
+  var across = false
+  if (s) {
+    if (s.allDay) {
+      args.push("--all-day")
+      if (s.dates) args.push("--starts-on", s.date, "--ends-on", s.endDate)
+    } else {
+      if (s.dates) args.push("--starts-on", s.date)
+      args.push("--start-time", s.startTime, "--time-zone", s.timeZone)
+      across = !!s.endTimeZone && s.endTimeZone !== s.timeZone && !!s.endTime
+      if (!across) {
+        if (s.dates) args.push("--ends-on", s.endDate)
+        if (s.endTime) args.push("--end-time", s.endTime)
+      }
+    }
+  }
+  args.push("--json")
+  if (!across) return args
+  return ["sh", "-c", acrossZonesScript, "sh", s.timeZone, s.date, s.startTime, s.endTimeZone, s.endTime].concat(args)
+}
+
 function deleteCommand(event) {
   if (!event || event.recurring) return []
   var id = String(event.seriesId || "")
@@ -353,6 +414,8 @@ if (typeof module !== "undefined") {
     watchCommand: watchCommand,
     isWatchChange: isWatchChange,
     createCommand: createCommand,
+    editCommand: editCommand,
+    editsOccurrences: editsOccurrences,
     deleteCommand: deleteCommand,
     writeResult: writeResult,
     currentTrackCommand: currentTrackCommand,

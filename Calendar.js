@@ -76,6 +76,13 @@ function normalizeEvent(raw) {
     if (at !== null) reminders.push(at)
   }
 
+  var leads = []
+  var rawLeads = Array.isArray(raw.reminder_leads) ? raw.reminder_leads : []
+  for (var j = 0; j < rawLeads.length && leads.length < 8; j++) {
+    var lead = Number(rawLeads[j])
+    if (isFinite(lead) && lead >= 0) leads.push(Math.round(lead))
+  }
+
   var seriesId = boundedString(raw.id, 32)
   var occurrenceId = boundedString(raw.occurrence_id, 96)
   return {
@@ -84,6 +91,9 @@ function normalizeEvent(raw) {
     key: (occurrenceId || seriesId) + "@" + startsAt,
     seriesId: seriesId,
     occurrenceId: occurrenceId,
+    // A day of a series that HEY has written out on its own keeps its own
+    // id in `id` and the series' here.
+    parentId: boundedString(raw.parent_id, 32),
     recurring: raw.recurring === true,
     title: boundedString(raw.title, 256) || "(untitled)",
     allDay: allDay,
@@ -98,6 +108,8 @@ function normalizeEvent(raw) {
     url: safeUrl(raw.url),
     status: boundedString(raw.status, 32),
     reminders: reminders,
+    // How long before the start each reminder goes off, in seconds.
+    reminderLeads: leads,
     repeatKind: boundedString(raw.repeat_kind, 32),
     repeatDescription: boundedString(raw.repeat_description, 256),
     // Resolved once, here, so nothing downstream has to remember that an
@@ -550,8 +562,8 @@ function weekKeysBetween(firstKey, lastKey) {
 // An all-day event is not an instant at all: HEY stores it as a midnight-UTC
 // pair, and reading that as a moment would slide it onto yesterday for
 // everyone west of Greenwich. So its dates are read off the text, never
-// converted. Multi-day ones end exclusively (a three-day trip is the 13th to
-// the 16th) while a single-day one repeats its own date.
+// converted. The end date is the last day, as HEY draws it: a trip from the
+// 13th to the 16th covers four days, and a single day repeats its own date.
 function eventDayKeys(event) {
   if (!event) return []
   var keys = []
@@ -580,7 +592,7 @@ function eventDayKeys(event) {
   if (!isDayKey(first)) return []
   if (!isDayKey(endKey) || endKey <= first) return [first]
   cursor = first
-  while (cursor < endKey && keys.length < 90) {
+  while (cursor <= endKey && keys.length < 90) {
     keys.push(cursor)
     cursor = addDays(cursor, 1)
   }
@@ -1240,8 +1252,13 @@ function validateEvent(form) {
     endDate: f.date, timeZone: "", endTimeZone: "", calendarId: Number(f.calendarId) > 0 ? Math.round(Number(f.calendarId)) : 0,
     location: String(f.location || "").replace(/^\s+|\s+$/g, "").substr(0, 256), remind: "" }
 
+  // How many days after the start the end falls, when the form is editing
+  // an event that runs over several (the form has no end day of its own).
+  var spanDays = Math.max(0, Math.min(366, Math.round(Number(f.spanDays) || 0)))
+
   if (request.allDay) {
-    if (f.endDate && f.endDate !== f.date) {
+    if (spanDays > 0) request.endDate = addDays(f.date, spanDays)
+    else if (f.endDate && f.endDate !== f.date) {
       if (!isDayKey(f.endDate) || f.endDate < f.date) return { error: "It has to end after it starts." }
       request.endDate = f.endDate
     }
@@ -1263,6 +1280,8 @@ function validateEvent(form) {
         // Clocks in two zones do not compare; the backend works out the day.
         if (!isZoneName(endZone)) return { error: "“" + endZone + "” is not a time zone I know." }
         request.endTimeZone = endZone
+      } else if (spanDays > 0) {
+        request.endDate = addDays(f.date, spanDays)
       } else {
         if (clockMinutes(end) === clockMinutes(start)) return { error: "It has to end after it starts." }
         // An end before the start is read as the next morning, the way you
@@ -1275,6 +1294,101 @@ function validateEvent(form) {
   var remind = String(f.remind || "")
   if (remind !== "" && reminderChoices.indexOf(remind) !== -1) request.remind = remind
   return { request: request }
+}
+
+// ---------------------------------------------------------------------------
+// Editing
+// ---------------------------------------------------------------------------
+
+var reminderLeadChoices = { 600: "10m", 1800: "30m", 3600: "1h", 86400: "1d" }
+
+// The new-event form's values for an existing event, to edit it: times on
+// this machine's clock (HEY's listings do not say which zone an event was
+// written in), the reminder when it is one the form offers ("keep" when it
+// is several or another lead), and how many days after the start it ends.
+function eventFormValues(event, localZone) {
+  if (!event) return null
+  var values = { title: event.title, allDay: event.allDay, location: event.location,
+    calendarId: event.calendarId, timeZone: localZone || "", endTimeZone: "",
+    startTime: "", endTime: "", date: "", spanDays: 0, remind: "" }
+  if (event.allDay) {
+    var keys = eventDayKeys(event)
+    if (keys.length === 0) return null
+    values.date = keys[0]
+    values.spanDays = keys.length - 1
+  } else {
+    if (event.startMs === null) return null
+    var start = new Date(event.startMs)
+    var end = new Date(event.endMs !== null && event.endMs > event.startMs ? event.endMs : event.startMs + 3600000)
+    values.date = keyForDate(start)
+    values.startTime = formatTime(start, true)
+    values.endTime = formatTime(end, true)
+    values.spanDays = Math.max(0, daysBetween(values.date, keyForDate(end)))
+    // An end at the start's clock the next day is a full day, not nothing.
+    if (values.spanDays === 1 && clockMinutes(values.endTime) < clockMinutes(values.startTime)) values.spanDays = 0
+  }
+  var leads = event.reminderLeads || []
+  if (leads.length === 1 && reminderLeadChoices[leads[0]]) values.remind = reminderLeadChoices[leads[0]]
+  else if (leads.length > 0) values.remind = "keep"
+  return values
+}
+
+// Can one day of this series be edited on its own? A day HEY wrote out has
+// its own id; any other day needs the occurrence (and a CLI that takes it).
+function editsOneDay(event, occurrencesSupported) {
+  if (!event || !event.recurring) return false
+  if (event.parentId !== "" && event.parentId !== event.seriesId) return true
+  return occurrencesSupported === true && event.occurrenceId !== ""
+}
+
+// What an edit changes: the edited form (`after`) against what it opened
+// with (`before`, from eventFormValues). Only what changed is sent, since
+// HEY keeps the rest, the reminders included. `scope` is "one" (this day
+// of a series) or "all" (the whole event or series). Returns { error },
+// { unchanged: true } or { request: { event, scope, changes } }.
+function editRequest(event, before, after, scope, occurrencesSupported) {
+  if (!event || !before) return { error: "That event is gone. Refresh and try again." }
+  var one = scope === "one" && event.recurring
+  if (one && !editsOneDay(event, occurrencesSupported))
+    return { error: "This hey-cli can only change the whole series. Update it to change one day." }
+
+  var checked = validateEvent(after)
+  if (checked.error) return checked
+  var opened = validateEvent(before)
+  if (opened.error) return { error: "OmaCal could not read that event's times. Edit it in HEY." }
+  var was = opened.request
+  var now = checked.request
+  var changes = {}
+
+  if (now.title !== was.title) changes.title = now.title
+  if (now.location !== was.location) changes.location = now.location
+  if (now.calendarId > 0 && now.calendarId !== was.calendarId) changes.calendarId = now.calendarId
+
+  var remind = String(after.remind || "")
+  if (remind !== String(before.remind || "") && remind !== "keep") {
+    // hey-cli sends back what an edit does not name, and has no way to say
+    // "none": an event keeps at least the reminders it has.
+    if (remind === "") return { error: "OmaCal cannot remove reminders yet. Turn them off in HEY." }
+    changes.remind = remind
+  }
+
+  var moved = now.allDay !== was.allDay || now.date !== was.date || now.endDate !== was.endDate
+  var retimed = !now.allDay && (now.startTime !== was.startTime || now.endTime !== was.endTime
+    || now.timeZone !== was.timeZone || now.endTimeZone !== was.endTimeZone)
+  if (moved || retimed) {
+    if (event.recurring && !one && (now.date !== was.date || now.endDate !== was.endDate))
+      return { error: "Move one day of a series at a time, or move the whole series in HEY." }
+    if (event.recurring && !one && now.endTimeZone !== "")
+      return { error: "Give the end its own zone on one day at a time." }
+    changes.schedule = { allDay: now.allDay, date: now.date, endDate: now.endDate,
+      startTime: now.startTime, endTime: now.endTime, timeZone: now.timeZone,
+      endTimeZone: now.endTimeZone, dates: !(event.recurring && !one) }
+  }
+
+  var any = false
+  for (var k in changes) any = true
+  if (!any) return { unchanged: true }
+  return { request: { event: event, scope: one ? "one" : "all", changes: changes } }
 }
 
 // ---------------------------------------------------------------------------
@@ -1444,6 +1558,9 @@ if (typeof module !== "undefined") {
     cycle: cycle,
     suggestedStart: suggestedStart,
     validateEvent: validateEvent,
+    eventFormValues: eventFormValues,
+    editsOneDay: editsOneDay,
+    editRequest: editRequest,
     zonesCommand: zonesCommand,
     isZoneName: isZoneName,
     parseZones: parseZones,

@@ -26,6 +26,7 @@ Item {
 
   signal activated()
   signal deleteRequested()
+  signal joinRequested()
 
   readonly property string position: event ? Cal.spanPosition(event, dayKey) : "single"
   readonly property bool pill: !!event && (event.allDay || position === "middle")
@@ -112,6 +113,7 @@ Item {
     anchors.top: parent.top
     anchors.leftMargin: Style.space(10)
     anchors.rightMargin: Style.space(10) + (root.deletable ? deleteButton.width : 0)
+      + (root.event && root.event.joinUrl !== "" ? joinButton.width + Style.space(10) : 0)
     anchors.topMargin: Style.space(7)
     spacing: Style.space(1)
 
@@ -171,7 +173,7 @@ Item {
     onClicked: root.activated()
 
     PanelToolTip {
-      visible: cardMouse.containsMouse && !!root.event && !deleteMouse.containsMouse
+      visible: cardMouse.containsMouse && !!root.event && !deleteMouse.containsMouse && !joinMouse.containsMouse
       fontFamily: root.fontFamily
       text: {
         if (!root.event) return ""
@@ -179,8 +181,37 @@ Item {
         if (root.event.calendar !== "") lines.push(root.event.calendar)
         if (root.event.location !== "") lines.push(root.event.location)
         if (root.event.recurring) lines.push("Repeats")
-        lines.push(root.event.joinUrl !== "" ? (root.event.joinTitle || "Click to join") : "Click to open")
+        lines.push("Click to edit")
         return lines.join("\n")
+      }
+    }
+  }
+
+  // ---- Join, for an event with a meeting link: clicking the card edits it.
+  Text {
+    id: joinButton
+    readonly property bool hovered: cardMouse.containsMouse || joinMouse.containsMouse || deleteMouse.containsMouse
+    visible: !!root.event && root.event.joinUrl !== "" && !root.confirming && (hovered || root.current)
+    anchors.right: deleteButton.visible ? deleteButton.left : parent.right
+    anchors.rightMargin: Style.space(10)
+    anchors.verticalCenter: parent.verticalCenter
+    text: "󰍫"
+    color: joinMouse.containsMouse ? root.accent : Qt.rgba(0.106, 0.149, 0.196, 0.6)
+    font.family: root.fontFamily
+    font.pixelSize: Style.font.icon
+
+    MouseArea {
+      id: joinMouse
+      anchors.fill: parent
+      anchors.margins: -Style.space(6)
+      hoverEnabled: true
+      cursorShape: Qt.PointingHandCursor
+      onClicked: root.joinRequested()
+
+      PanelToolTip {
+        visible: joinMouse.containsMouse
+        text: root.event && root.event.joinTitle !== "" ? root.event.joinTitle : "Join the meeting"
+        fontFamily: root.fontFamily
       }
     }
   }

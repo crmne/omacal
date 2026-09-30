@@ -48,7 +48,9 @@ ShellRoot {
   readonly property var sampleEvents: Cal.normalizeEvents([
     allDay(1, "Sam's birthday", "Family", "red", 0),
     timed(2, "Team standup", "Work", "blue", 0, 9, 30, 15),
-    timed(3, "Design review: onboarding", "Work", "blue", 0, 11, 0, 90, { location: "Studio 3" }),
+    timed(3, "Design review: onboarding", "Work", "blue", 0, 11, 0, 90, { location: "Studio 3",
+      join_url: "https://meet.example.com/design-review", calendar_id: 1, reminder_leads: [1800],
+      url: "https://app.hey.com/calendar/events/3/edit" }),
     timed(4, "Lunch with Maya", "Friends", "gold", 0, 13, 0, 60, { location: "Café Luna" }),
     timed(5, "Climbing", "Health", "green", 0, 18, 30, 90, { location: "Boulderhalle" }),
     timed(6, "Team standup", "Work", "blue", 1, 9, 30, 15),
@@ -144,7 +146,7 @@ ShellRoot {
     property string backendMode: "week"
     property string backendName: "HEY"
     property string backendVersion: "1.7.0"
-    property var capabilities: ({ create: true, delete: true, watch: true, timeTracking: true, dayLink: true })
+    property var capabilities: ({ create: true, edit: true, delete: true, watch: true, timeTracking: true, dayLink: true })
     signal writeFinished(bool ok, string message)
     function showWeeks(keys) {}
     function refreshCalendar(force) {}
@@ -152,6 +154,8 @@ ShellRoot {
     function modeNote() { return "Calendars switched off in HEY are already left out." }
     function openUrl(url) {}
     function addEvent(form) { return false }
+    function editEvent(event, before, form) { return false }
+    function editsOneDay(event) { return Cal.editsOneDay(event, true) }
     function deleteEvent(event, key) { return false }
     function startTimeTrack() {}
     function stopTimeTrack() {}
@@ -294,11 +298,18 @@ ShellRoot {
       if (phase === 6) shell.save(cardItem, "settings-full.png")
       if (phase === 7) {
         panel.closeSettings()
+        var review = null
+        for (var i = 0; i < shell.sampleEvents.length; i++)
+          if (shell.sampleEvents[i].title === "Design review: onboarding") review = shell.sampleEvents[i]
+        panel.editEvent(review)
+      }
+      if (phase === 9) shell.save(cardItem, "edit-full.png")
+      if (phase === 10) {
         panel.close()
         cardWindow.visible = true
         form.reset()
       }
-      if (phase === 8) {
+      if (phase === 11) {
         form.titleInput = "Coffee with Alex"
         form.dayInput = "tomorrow"
         form.startInput = "10:00"
@@ -306,13 +317,13 @@ ShellRoot {
         form.locationInput = "Café Luna"
         form.calendarId = 3
       }
-      if (phase === 9) shell.save(card, "quick-add.png")
-      if (phase === 10) {
+      if (phase === 12) shell.save(card, "quick-add.png")
+      if (phase === 13) {
         cardWindow.visible = false
         labelWindow.visible = true
       }
-      if (phase === 11) shell.save(labelBox, "bar.png")
-      if (phase === 12) Qt.quit()
+      if (phase === 14) shell.save(labelBox, "bar.png")
+      if (phase === 15) Qt.quit()
     }
   }
 }

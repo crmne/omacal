@@ -13,7 +13,7 @@ plug in as backends (see [Backends](#backends)).
 - **Click a day to see it.** The day view under the grid draws the day the
   way HEY does: all-day pills, then a pastel block per event with its time,
   calendar and location. The event under way is ringed and marked `NOW`.
-  Clicking an event opens its meeting link, or the event in HEY.
+  Clicking an event edits it; its join button (or `J`) opens the meeting.
 - **New events.** `+`, `N`, or double-clicking a day opens a quick form:
   title, day, calendar, all-day or a time range, place, reminder. Days and
   times are typed loosely: `fri`, `tomorrow`, `next mon`, `3 oct` for the
@@ -23,6 +23,13 @@ plug in as backends (see [Backends](#backends)).
   each of them, as a city you can type over (`new york`, `tokyo`); the
   end's follows the start's unless you give it its own, for a flight from
   Berlin at 10:00 to New York at 13:00.
+- **Edit events right here.** Clicking an event (or `E`, or its number
+  `1` to `9`) opens it in the same form: change its title, day, times,
+  zones, place, calendar or reminder, and only what you changed is sent to
+  HEY. For a repeating event, choose whether the change is for this day or
+  every day of the series (this day needs hey-cli 1.6.0 or newer). Join
+  and Open in HEY are at the top, for the meeting and for what the form
+  does not cover: notes, guests and repeats.
 - **Quick add from anywhere.** **Alt+Shift+Space** opens the same form as a
   card in the middle of the screen, like OmaTasks' quick add. The shortcut
   is bound in Hyprland by the plugin, never over one that is already taken,
@@ -53,7 +60,11 @@ plug in as backends (see [Backends](#backends)).
   **Today** button (or `T`) back to it whenever you have moved away.
 
 <p>
+  <img src="screenshots/edit.png" alt="An event open for editing in the panel" width="49%">
   <img src="screenshots/quick-add.png" alt="The quick-add card, filled in" width="49%">
+</p>
+
+<p>
   <img src="screenshots/settings.png" alt="The settings, inside the panel" width="49%">
 </p>
 
@@ -108,8 +119,8 @@ touches nothing in your calendar.
 
 Everything goes through the backend's command-line tool; OmaCal makes no
 network requests of its own and stores no credentials. For HEY:
-`hey event week` or `hey event list`, `hey calendar list`, `hey event add`
-and `delete`, `hey timetrack`, and a long-running `hey watch` for live
+`hey event week` or `hey event list`, `hey calendar list`, `hey event add`,
+`edit` and `delete`, `hey timetrack`, and a long-running `hey watch` for live
 sync. Every call is bounded by `timeout` and `head -c`, and takes its input
 as arguments, never as shell text. Event text is length-capped and drawn as
 plain text, and only `https` links are handed to `xdg-open`. It also runs
@@ -117,7 +128,7 @@ plain text, and only `https` links are handed to `xdg-open`. It also runs
 
 ## Keys
 
-### New-event form (panel and quick add)
+### Event form (new and edited events, panel and quick add)
 
 The form never needs the mouse. A hint line under it says what the keys do
 where the focus is.
@@ -125,13 +136,13 @@ where the focus is.
 | Key | Does |
 | --- | --- |
 | `Tab` / `Shift+Tab` | Next / previous field, the calendar and reminder rows included |
-| `←` `→` | On the calendar row: switch calendar. On the reminder row: switch reminder. On all day: toggle |
+| `←` `→` | On the calendar row: switch calendar. On the reminder row: switch reminder. On all day: toggle. On a repeating event's change row: this day or every day |
 | `↑` `↓` | In a time: 15 minutes earlier or later. In the day: a day (`Shift`: a week). In a zone: the previous or next match |
 | `Alt+←` `Alt+→` | Switch calendar, from any field |
 | `Alt+↑` `Alt+↓` | Switch reminder, from any field |
 | `Alt+A` | Toggle all day, from any field |
 | `Alt+Z` | Show the time zones under the times, or hide them and go back to local time |
-| `Enter` | Add the event |
+| `Enter` | Add the event, or save the changes |
 | `Esc` | Cancel |
 
 ### Calendar panel
@@ -144,6 +155,9 @@ The stock ones all work: arrows, `[` `]` months, `{` `}` years, `T` today,
 | `,` `.` | Previous / next day |
 | `<` `>` | Previous / next week |
 | `N` | New event on the selected day |
+| `E` | Edit the selected day's event under way, or the next one |
+| `1` to `9` | Edit that event of the selected day |
+| `J` | Join the meeting of the event under way, or the next one |
 | `S` | Settings |
 | `O` | Open the selected day in HEY |
 | `R` | Refresh from HEY |
@@ -175,6 +189,12 @@ and `lastCalendarId` (the calendar the last new event went on).
 HEY's day titles, photos and "Sometime this week" are not exposed by
 hey-cli, so they are not here yet. Day titles are in HEY's API
 (`Calendar::DayTitle`), and are the first candidate for a hey-cli addition.
+
+Editing cannot yet remove every reminder from an event, change its notes,
+guests or repeats, or move a whole series to another day: those are in
+HEY, a click away from the form. An edited event's times are shown on this
+machine's clock, and saving new times writes them in the zones the form
+shows.
 
 HEY keeps a zone for each end of an event, but `hey event add` takes one
 `--time-zone` for both. An end given its own zone is saved at the right

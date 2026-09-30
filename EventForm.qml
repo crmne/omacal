@@ -18,6 +18,10 @@ import "Calendar.js" as Cal
 // created through `hey event add`, so HEY applies its own defaults to
 // anything left blank.
 //
+// The same form edits an event (load()): it opens on the event as it is,
+// and saving sends only what changed. On a repeating event it asks whether
+// the change is for this day or every day of the series.
+//
 // Built to be used without a mouse. Tab and Shift+Tab walk every field,
 // the calendar row and the reminder row included; on those rows the arrow
 // keys pick. Up and Down nudge a time by a quarter hour and the day by one
@@ -46,6 +50,8 @@ Item {
 
   signal submitted(var form)
   signal canceled()
+  // A link the edit form offers: the event's meeting, or its page in HEY.
+  signal openRequested(string url)
 
   // The fields' text, for filling the form from outside (the screenshot
   // harness). Named apart from the functions below: an alias that shares a
@@ -68,7 +74,25 @@ Item {
   property bool loadZones: true
   property string localZone: ""
   property var zones: []
-  readonly property var reminderValues: ["", "10m", "30m", "1h", "1d"]
+  // The event being edited, or null for a new one, and what the form
+  // opened with, which is what an edit is measured against.
+  property var editing: null
+  property var opened: null
+  // Whether one day of a repeating event can be changed on its own, and
+  // which the change is for: "one" day or "all" of the series.
+  property bool oneDayEditable: false
+  property string scope: "one"
+  readonly property bool repeating: !!root.editing && root.editing.recurring
+  readonly property var scopeValues: root.oneDayEditable ? ["one", "all"] : ["all"]
+  property string serviceName: "HEY"
+  // How many days after the start the edited event ends; the form has no
+  // end day, so an edit keeps the event's own span.
+  property int spanDays: 0
+
+  // "keep" stands for reminders the form has no button for (several, or
+  // another lead), and is offered only while editing an event with them.
+  readonly property bool keepsReminders: !!root.opened && root.opened.remind === "keep"
+  readonly property var reminderValues: root.keepsReminders ? ["keep", "", "10m", "30m", "1h", "1d"] : ["", "10m", "30m", "1h", "1d"]
   readonly property var calendarIds: {
     var ids = []
     for (var i = 0; i < root.calendars.length; i++) ids.push(root.calendars[i].id)
@@ -82,14 +106,15 @@ Item {
 
   // What the keys do where the focus is, one line under the form.
   readonly property string keyHint: {
-    if (calendarRow.activeFocus) return "←→ calendar · Tab next · Enter add · Esc cancel"
-    if (remindRow.activeFocus) return "←→ reminder · Tab next · Enter add · Esc cancel"
-    if (allDayRow.activeFocus) return "Space all day · Tab next · Enter add · Esc cancel"
-    if (dateField.activeFocus) return "↑↓ day, Shift a week · Tab next · Alt+←→ calendar · Enter add"
-    if (startZone.activeFocus) return "Type a city · ↑↓ pick · empty is local time · Alt+Z hide zones · Enter add"
-    if (endZone.activeFocus) return "Type a city · ↑↓ pick · empty is the start's zone · Alt+Z hide zones · Enter add"
-    if (startField.activeFocus || endField.activeFocus) return "↑↓ 15 min · Tab next · Alt+←→ calendar · Enter add"
-    return "Tab next field · Alt+←→ calendar · Alt+↑↓ reminder · Alt+A all day · Alt+Z zones · Enter add"
+    if (calendarRow.activeFocus) return "←→ calendar · Tab next · Enter " + root.verb + " · Esc cancel"
+    if (remindRow.activeFocus) return "←→ reminder · Tab next · Enter " + root.verb + " · Esc cancel"
+    if (scopeRow.activeFocus) return "←→ this day or every day · Tab next · Enter save · Esc cancel"
+    if (allDayRow.activeFocus) return "Space all day · Tab next · Enter " + root.verb + " · Esc cancel"
+    if (dateField.activeFocus) return "↑↓ day, Shift a week · Tab next · Alt+←→ calendar · Enter " + root.verb
+    if (startZone.activeFocus) return "Type a city · ↑↓ pick · empty is local time · Alt+Z hide zones · Enter " + root.verb
+    if (endZone.activeFocus) return "Type a city · ↑↓ pick · empty is the start's zone · Alt+Z hide zones · Enter " + root.verb
+    if (startField.activeFocus || endField.activeFocus) return "↑↓ 15 min · Tab next · Alt+←→ calendar · Enter " + root.verb
+    return "Tab next field · Alt+←→ calendar · Alt+↑↓ reminder · Alt+A all day · Alt+Z zones · Enter " + root.verb
   }
 
   readonly property string dayLabel: Cal.isDayKey(resolvedDay)
@@ -100,7 +125,12 @@ Item {
 
   // Called each time the form opens, so a second event does not inherit
   // the first one's title.
+  readonly property string verb: root.editing ? "save" : "add"
+
   function reset() {
+    root.editing = null
+    root.opened = null
+    root.spanDays = 0
     titleField.text = ""
     locationField.text = ""
     var today = root.todayKey !== "" ? root.todayKey : Cal.keyForDate(new Date())
@@ -117,6 +147,27 @@ Item {
     root.localError = ""
     root.calendarId = pickCalendar(root.defaultCalendarId)
     focusTitle()
+  }
+
+  // Opens the form on an existing event. `values` is Cal.eventFormValues'.
+  function load(event, values, oneDayEditable) {
+    reset()
+    if (!event || !values) return
+    root.editing = event
+    root.opened = values
+    root.oneDayEditable = oneDayEditable === true
+    root.scope = root.scopeValues[0]
+    root.spanDays = values.spanDays
+    titleField.text = values.title
+    locationField.text = values.location
+    dateField.text = dayText(values.date)
+    root.allDay = values.allDay
+    startField.text = values.allDay ? Cal.suggestedStart(values.date, new Date()) : values.startTime
+    endField.text = values.allDay ? "" : values.endTime
+    root.remind = values.remind
+    // The event's own calendar, even one the form cannot offer (the row
+    // then shows none chosen), so saving never moves it by accident.
+    root.calendarId = values.calendarId
   }
 
   function focusTitle() {
@@ -157,7 +208,10 @@ Item {
       endTimeZone: root.allDay ? "" : endZone.chosen,
       calendarId: root.calendarId,
       location: locationField.text,
-      remind: root.remind
+      remind: root.remind,
+      spanDays: root.spanDays,
+      scope: root.scope,
+      localZone: root.localZone
     })
   }
 
@@ -167,6 +221,7 @@ Item {
     if (!root.allDay) order.push(startField, endField)
     if (!root.allDay && root.showZones) order.push(startZone, endZone)
     order.push(locationField, remindRow)
+    if (root.repeating) order.push(scopeRow)
     return order
   }
 
@@ -227,6 +282,7 @@ Item {
     else if (alt && key === Qt.Key_Z && !root.allDay) toggleZones()
     else if (item === calendarRow && (left || key === Qt.Key_Up)) stepCalendar(-1)
     else if (item === calendarRow && (right || key === Qt.Key_Down)) stepCalendar(1)
+    else if (item === scopeRow && (left || right)) root.scope = Cal.cycle(root.scopeValues, root.scope, left ? -1 : 1)
     else if (item === remindRow && left) stepReminder(-1)
     else if (item === remindRow && right) stepReminder(1)
     else if (item === allDayRow && (key === Qt.Key_Space || left || right)) root.allDay = !root.allDay
@@ -264,13 +320,51 @@ Item {
     width: parent.width
     spacing: Style.space(10)
 
-    Text {
-      textFormat: Text.PlainText
-      text: "NEW EVENT"
-      color: Qt.darker(root.foreground, 1.5)
-      font.family: root.fontFamily
-      font.pixelSize: Style.font.bodySmall
-      font.letterSpacing: 1
+    Item {
+      width: parent.width
+      height: Math.max(heading.implicitHeight, links.implicitHeight)
+
+      Text {
+        id: heading
+        anchors.left: parent.left
+        anchors.verticalCenter: parent.verticalCenter
+        textFormat: Text.PlainText
+        text: root.editing ? (root.repeating ? "EDIT REPEATING EVENT" : "EDIT EVENT") : "NEW EVENT"
+        color: Qt.darker(root.foreground, 1.5)
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.bodySmall
+        font.letterSpacing: 1
+      }
+
+      // The meeting to join, and the event in HEY for what the form does not
+      // cover (notes, guests, repeats).
+      Row {
+        id: links
+        visible: !!root.editing
+        anchors.right: parent.right
+        anchors.verticalCenter: parent.verticalCenter
+        spacing: Style.space(6)
+
+        Button {
+          visible: !!root.editing && root.editing.joinUrl !== ""
+          text: root.editing && root.editing.joinTitle !== "" ? root.editing.joinTitle : "Join"
+          iconText: "󰍫"
+          foreground: root.foreground
+          accent: root.accent
+          fontFamily: root.fontFamily
+          onClicked: root.openRequested(root.editing.joinUrl)
+        }
+
+        Button {
+          visible: !!root.editing && root.editing.url !== ""
+          text: "Open in " + root.serviceName
+          iconText: "󰏌"
+          foreground: root.foreground
+          accent: root.accent
+          fontFamily: root.fontFamily
+          onClicked: root.openRequested(root.editing.url)
+        }
+      }
     }
 
     TextField {
@@ -568,13 +662,13 @@ Item {
         background: "transparent"
         anchors.verticalCenter: parent.verticalCenter
         focusable: false
-        options: [
+        options: (root.keepsReminders ? [{ value: "keep", label: "As is" }] : []).concat([
           { value: "", label: "None" },
           { value: "10m", label: "10m" },
           { value: "30m", label: "30m" },
           { value: "1h", label: "1h" },
           { value: "1d", label: "1d" }
-        ]
+        ])
         value: root.remind
         // Lights the chosen reminder while the row has the keyboard.
         cursorIndex: remindRow.activeFocus ? root.reminderValues.indexOf(root.remind) : -1
@@ -583,6 +677,39 @@ Item {
         fontFamily: root.fontFamily
         fontSize: Style.font.bodySmall
         onChanged: function(value) { root.remind = value }
+      }
+    }
+
+    // A repeating event: is the change for this day, or the whole series?
+    Row {
+      id: scopeRow
+      visible: root.repeating
+      spacing: Style.space(10)
+      Keys.onPressed: function(event) { root.handleKey(event, scopeRow) }
+
+      Text {
+        anchors.verticalCenter: parent.verticalCenter
+        text: "CHANGE"
+        color: Qt.darker(root.foreground, 1.5)
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.bodySmall
+        font.letterSpacing: 1
+      }
+
+      ButtonGroup {
+        background: "transparent"
+        anchors.verticalCenter: parent.verticalCenter
+        focusable: false
+        options: root.oneDayEditable
+          ? [{ value: "one", label: "This day" }, { value: "all", label: "Every day" }]
+          : [{ value: "all", label: "Every day" }]
+        value: root.scope
+        cursorIndex: scopeRow.activeFocus ? root.scopeValues.indexOf(root.scope) : -1
+        foreground: root.foreground
+        accent: root.accent
+        fontFamily: root.fontFamily
+        fontSize: Style.font.bodySmall
+        onChanged: function(value) { root.scope = value }
       }
     }
 
@@ -596,7 +723,7 @@ Item {
         anchors.right: cancelButton.left
         anchors.rightMargin: Style.space(10)
         anchors.verticalCenter: parent.verticalCenter
-        text: root.busy ? "Adding…" : (root.localError !== "" ? root.localError : root.error)
+        text: root.busy ? (root.editing ? "Saving…" : "Adding…") : (root.localError !== "" ? root.localError : root.error)
         color: root.busy ? Qt.darker(root.foreground, 1.4) : Color.urgent
         font.family: root.fontFamily
         font.pixelSize: Style.font.bodySmall
@@ -621,8 +748,8 @@ Item {
         id: createButton
         anchors.right: parent.right
         anchors.verticalCenter: parent.verticalCenter
-        text: "Add event"
-        iconText: "󰐕"
+        text: root.editing ? "Save" : "Add event"
+        iconText: root.editing ? "󰆓" : "󰐕"
         bordered: true
         enabled: !root.busy
         foreground: root.foreground

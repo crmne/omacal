@@ -314,6 +314,37 @@ BarWidget {
     return runWrite(Backend.createCommand(checked.request), form.date)
   }
 
+  // One day of a series can be edited alone by a CLI that takes occurrences.
+  function editsOneDay(event) {
+    return Cal.editsOneDay(event, Backend.editsOccurrences(root.backendVersion))
+  }
+
+  // `before` is what the form opened with (Cal.eventFormValues), `form`
+  // what it holds now; only the difference is sent.
+  function editEvent(event, before, form) {
+    var checked = Cal.editRequest(event, before, form, form.scope, Backend.editsOccurrences(root.backendVersion))
+    if (checked.error) {
+      root.writeError = checked.error
+      root.writeFinished(false, checked.error)
+      return false
+    }
+    if (checked.unchanged) {
+      root.writeError = ""
+      root.writeFinished(true, "")
+      return true
+    }
+    var command = Backend.editCommand(checked.request)
+    if (command.length === 0) {
+      root.writeError = "OmaCal cannot name that event to " + root.backendName + ". Edit it there."
+      root.writeFinished(false, root.writeError)
+      return false
+    }
+    // The day it was on and the day it moves to both need reading again.
+    var from = Cal.eventDayKeys(event)
+    if (from.length > 0 && from[0] !== form.date) invalidateDay(from[0])
+    return runWrite(command, form.date)
+  }
+
   function deleteEvent(event, dayKey) {
     return runWrite(Backend.deleteCommand(event), dayKey)
   }

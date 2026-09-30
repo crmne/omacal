@@ -150,6 +150,45 @@ Panel {
     Qt.callLater(function() { eventForm.reset() })
   }
 
+  // Opens an event in the form, to change it here rather than in HEY.
+  // Without a backend that edits, it opens the event in the service.
+  function editEvent(event) {
+    if (!root.hostWidget || !event) return
+    if (!root.hostWidget.capabilities.edit) {
+      root.openEvent(event)
+      return
+    }
+    var values = Cal.eventFormValues(event, eventForm.localZone)
+    if (!values) {
+      root.openEvent(event)
+      return
+    }
+    if (!root.opened) root.open()
+    root.showingSettings = false
+    root.composing = true
+    var oneDay = root.hostWidget.editsOneDay(event)
+    Qt.callLater(function() { eventForm.load(event, values, oneDay) })
+  }
+
+  function openEvent(event) {
+    if (!root.hostWidget || !event) return
+    root.hostWidget.openUrl(event.url !== "" ? event.url : root.hostWidget.dayUrl(root.selectedKey))
+  }
+
+  // The event the keyboard means on the selected day: the one on now, else
+  // the next, else the first.
+  function focusEvent() {
+    var list = root.selectedEvents
+    if (list.length === 0) return null
+    var pick = Cal.currentOrNextEvent(list, root.nowMs)
+    return pick || list[0]
+  }
+
+  function joinEvent(event) {
+    var target = event || root.focusEvent()
+    if (root.hostWidget && target && target.joinUrl !== "") root.hostWidget.openUrl(target.joinUrl)
+  }
+
   function cancelComposing() {
     root.composing = false
     Qt.callLater(function() { if (keyCatcher) keyCatcher.forceActiveFocus() })
@@ -157,6 +196,10 @@ Panel {
 
   function submitEvent(form) {
     if (!root.hostWidget) return
+    if (eventForm.editing) {
+      if (root.hostWidget.editEvent(eventForm.editing, eventForm.opened, form)) root.selectDayKeepingForm(form.date)
+      return
+    }
     if (Number(form.calendarId) > 0) persistSettings({ lastCalendarId: Number(form.calendarId) })
     if (root.hostWidget.addEvent(form)) root.selectDayKeepingForm(form.date)
   }
@@ -180,8 +223,7 @@ Panel {
   }
 
   function activateEvent(event) {
-    if (!root.hostWidget || !event) return
-    root.hostWidget.openUrl(event.joinUrl !== "" ? event.joinUrl : (event.url !== "" ? event.url : root.hostWidget.dayUrl(root.selectedKey)))
+    root.editEvent(event)
   }
 
   function deleteEvent(event) {
@@ -416,6 +458,9 @@ Panel {
         else if (t === "t" || t === "T") root.goToToday()
         else if (t === "w" || t === "W") root.toggleWeekStart()
         else if (t === "n" || t === "N") root.newEvent()
+        else if (t === "e" || t === "E") root.editEvent(root.focusEvent())
+        else if (t === "j" || t === "J") root.joinEvent(null)
+        else if (/^[1-9]$/.test(t) && Number(t) <= root.selectedEvents.length) root.editEvent(root.selectedEvents[Number(t) - 1])
         else if (t === "s" || t === "S") root.openSettings()
         else if (t === "r" || t === "R") root.refreshCalendar()
         else if (t === "o" || t === "O") root.openSelectedDay()
@@ -1140,8 +1185,10 @@ Panel {
                 error: root.hostWidget ? root.hostWidget.writeError : ""
                 foreground: root.contentForeground
                 fontFamily: root.contentFontFamily
+                serviceName: root.hostWidget ? root.hostWidget.backendName : "HEY"
                 onSubmitted: function(form) { root.submitEvent(form) }
                 onCanceled: root.cancelComposing()
+                onOpenRequested: function(url) { if (root.hostWidget) root.hostWidget.openUrl(url) }
               }
 
               Column {
@@ -1163,6 +1210,7 @@ Panel {
                     fontFamily: root.contentFontFamily
                     busy: root.deletingKey === modelData.key
                     onActivated: root.activateEvent(modelData)
+                    onJoinRequested: root.joinEvent(modelData)
                     onDeleteRequested: root.deleteEvent(modelData)
                   }
                 }

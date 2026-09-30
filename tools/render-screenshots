@@ -21,7 +21,7 @@ ln -s "$repo" "$work/plugin"
 cp "$repo/tools/preview/shell.qml" "$work/shell.qml"
 mkdir -p "$work/out" "$repo/screenshots"
 
-OMACAL_PREVIEW_OUT="$work/out" OMACAL_PREVIEW_TIME="${OMACAL_PREVIEW_TIME:-}" timeout 30s quickshell -p "$work" --no-color >"$work/log" 2>&1 || true
+OMACAL_PREVIEW_OUT="$work/out" OMACAL_PREVIEW_TIME="${OMACAL_PREVIEW_TIME:-}" timeout 60s quickshell -p "$work" --no-color >"$work/log" 2>&1 || true
 
 # A script error in the plugin is a bug even when an image still comes out.
 if grep -E "TypeError|ReferenceError|SyntaxError|is not a function|is not defined" "$work/log"; then
@@ -35,7 +35,7 @@ import sys
 from pathlib import Path
 from PIL import Image
 src, dst = Path(sys.argv[1]), Path(sys.argv[2])
-for name in ["panel-full.png", "settings-full.png", "quick-add.png", "bar.png"]:
+for name in ["panel-full.png", "settings-full.png", "edit-full.png", "quick-add.png", "bar.png"]:
     path = src / name
     if not path.exists():
         sys.exit(f"missing {name}")

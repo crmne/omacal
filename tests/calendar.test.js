@@ -68,9 +68,11 @@ test("all-day events stay on their date in every zone", function() {
   assert.deepStrictEqual(Hey.eventDayKeys(e), ["2026-09-26"])
 })
 
-test("multi-day all-day events end exclusively", function() {
+// HEY stores a trip from the 13th to the 16th with the 16th as its end, and
+// draws it on all four days (`hey event day` lists it on the 16th).
+test("multi-day all-day events end on their last day", function() {
   var e = allDay(1, "Trip", "2026-10-13", "2026-10-16")
-  assert.deepStrictEqual(Hey.eventDayKeys(e), ["2026-10-13", "2026-10-14", "2026-10-15"])
+  assert.deepStrictEqual(Hey.eventDayKeys(e), ["2026-10-13", "2026-10-14", "2026-10-15", "2026-10-16"])
 })
 
 test("timed events span every local day they cover", function() {
@@ -419,6 +421,102 @@ test("the end's zone is ignored when it is the start's, and checked when it is n
   // No end time: an hour after the start, whatever the end's zone says.
   args = build({ title: "X", date: "2027-01-05", startTime: "10:00", timeZone: "Europe/Berlin", endTimeZone: "Asia/Tokyo" }).command
   assert.strictEqual(args[0], "timeout")
+})
+
+// ---- Editing
+
+function edit(event, change, scope, occurrences) {
+  var before = Hey.eventFormValues(event, "Europe/Berlin")
+  var after = Object.assign({}, before, change)
+  return Hey.editRequest(event, before, after, scope || "all", occurrences !== false)
+}
+
+function flag(args, name) {
+  var i = args.indexOf(name)
+  return i === -1 ? undefined : args[i + 1]
+}
+
+test("the edit form opens on the event as it is, and saving it unchanged sends nothing", function() {
+  var e = timed(41, "Palestra", 2026, 9, 30, 18, 30, 90, { location: "Evo", calendar_id: 7, reminder_leads: [1800] })
+  var values = Hey.eventFormValues(e, "Europe/Berlin")
+  assert.strictEqual(values.date, "2026-09-30")
+  assert.strictEqual(values.startTime, "18:30")
+  assert.strictEqual(values.endTime, "20:00")
+  assert.strictEqual(values.remind, "30m")
+  assert.strictEqual(values.spanDays, 0)
+  assert.ok(edit(e, {}).unchanged)
+})
+
+test("an edit sends only what changed", function() {
+  var e = timed(41, "Palestra", 2026, 9, 30, 18, 30, 90, { location: "Evo", calendar_id: 7, reminder_leads: [1800] })
+  var args = Backend.editCommand(edit(e, { title: "Gym" }).request)
+  assert.deepStrictEqual(args.slice(4, 8), ["hey", "event", "edit", "41"])
+  assert.strictEqual(flag(args, "--title"), "Gym")
+  assert.strictEqual(args.indexOf("--start-time"), -1)
+  assert.strictEqual(args.indexOf("--remind"), -1)
+  assert.strictEqual(args.indexOf("--location"), -1)
+})
+
+test("a new time is sent with its day and zone, so hey-cli never reads it as UTC", function() {
+  var e = timed(41, "Palestra", 2026, 9, 30, 18, 30, 90)
+  var args = Backend.editCommand(edit(e, { startTime: "19:00", endTime: "20:30" }).request)
+  assert.strictEqual(flag(args, "--start-time"), "19:00")
+  assert.strictEqual(flag(args, "--end-time"), "20:30")
+  assert.strictEqual(flag(args, "--time-zone"), "Europe/Berlin")
+  assert.strictEqual(flag(args, "--starts-on"), "2026-09-30")
+  assert.strictEqual(flag(args, "--ends-on"), "2026-09-30")
+})
+
+test("an overnight event keeps its end on the next day", function() {
+  var e = timed(42, "Night train", 2026, 9, 30, 22, 0, 180)
+  var values = Hey.eventFormValues(e, "Europe/Berlin")
+  assert.strictEqual(values.endTime, "01:00")
+  var args = Backend.editCommand(edit(e, { title: "Sleeper" , startTime: "22:30" }).request)
+  assert.strictEqual(flag(args, "--ends-on"), "2026-10-01")
+})
+
+test("a multi-day all-day event moves as a whole", function() {
+  var e = allDay(43, "Lisbon", "2026-10-13", "2026-10-16")
+  var values = Hey.eventFormValues(e, "Europe/Berlin")
+  assert.strictEqual(values.spanDays, 3)
+  var args = Backend.editCommand(edit(e, { date: "2026-10-20" }).request)
+  assert.ok(args.indexOf("--all-day") !== -1)
+  assert.strictEqual(flag(args, "--starts-on"), "2026-10-20")
+  assert.strictEqual(flag(args, "--ends-on"), "2026-10-23")
+})
+
+test("reminders the form cannot show are kept, and cannot be cleared", function() {
+  var e = timed(44, "Flight", 2026, 10, 2, 10, 0, 120, { reminder_leads: [86400, 7200] })
+  assert.strictEqual(Hey.eventFormValues(e, "Europe/Berlin").remind, "keep")
+  assert.ok(edit(e, { title: "Flight home" }).request.changes.remind === undefined)
+  assert.ok(edit(e, { remind: "" }).error)
+  assert.strictEqual(flag(Backend.editCommand(edit(e, { remind: "1h" }).request), "--remind"), "1h")
+})
+
+test("one day of a series is edited by occurrence, the whole series by its id", function() {
+  var day = timed(45, "Standup", 2026, 10, 5, 9, 30, 15, { recurring: true, occurrence_id: "45_2026-10-05" })
+  var args = Backend.editCommand(edit(day, { startTime: "10:00", endTime: "10:15" }, "one").request)
+  assert.deepStrictEqual(args.slice(7, 12), ["45", "--occurrence", "45_2026-10-05", "--apply-to", "current"])
+  args = Backend.editCommand(edit(day, { startTime: "10:00", endTime: "10:15" }, "all").request)
+  assert.strictEqual(args[7], "45")
+  assert.strictEqual(args.indexOf("--occurrence"), -1)
+  assert.strictEqual(args.indexOf("--starts-on"), -1, "a series keeps the day it began")
+  assert.ok(edit(day, { date: "2026-10-06" }, "all").error)
+  assert.ok(edit(day, { title: "X" }, "one", false).error, "old hey-cli cannot edit one day")
+})
+
+test("a day HEY wrote out on its own is edited by its own id", function() {
+  var day = timed(46, "Standup", 2026, 10, 6, 9, 30, 15, { recurring: true, parent_id: 45, occurrence_id: "45_2026-10-06" })
+  var args = Backend.editCommand(edit(day, { title: "Standup (moved)" }, "one").request)
+  assert.strictEqual(args[7], "46")
+  assert.strictEqual(args.indexOf("--occurrence"), -1)
+  assert.strictEqual(Backend.editCommand(edit(day, { title: "All standups" }, "all").request)[7], "45")
+})
+
+test("hey-cli from 1.6.0 edits single days of a series", function() {
+  assert.strictEqual(Backend.editsOccurrences("1.5.0"), false)
+  assert.strictEqual(Backend.editsOccurrences("1.6.0"), true)
+  assert.strictEqual(Backend.editsOccurrences("1.7.0"), true)
 })
 
 test("an all-day event needs no zone and sends none", function() {
