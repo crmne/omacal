@@ -157,7 +157,7 @@ Panel {
 
   function submitEvent(form) {
     if (!root.hostWidget) return
-    if (Number(form.calendarId) > 0) persistSettings({ lastCalendarId: Number(form.calendarId) })
+    if (form.calendarId) persistSettings({ lastCalendarId: form.calendarId })
     if (root.hostWidget.addEvent(form)) root.selectDayKeepingForm(form.date)
   }
 
@@ -1135,7 +1135,7 @@ Panel {
                 dayKey: root.selectedKey
                 todayKey: root.todayKey
                 calendars: root.hostWidget ? root.hostWidget.writableCalendars : []
-                defaultCalendarId: Number(root.setting("lastCalendarId", 0)) || 0
+                defaultCalendarId: root.setting("lastCalendarId", 0) || 0
                 busy: !!root.hostWidget && root.hostWidget.writing
                 error: root.hostWidget ? root.hostWidget.writeError : ""
                 foreground: root.contentForeground

@@ -5,9 +5,8 @@ import qs.Commons
 import qs.Ui
 import "Model.js" as Model
 import "Calendar.js" as Cal
-// The calendar service OmaCal reads. One backend is wired in today; a
-// second is a file in backends/ and the choice of which module this is.
-import "backends/Hey.js" as Backend
+import "backends/Hey.js" as Hey
+import "backends/Google.js" as Google
 
 // Date/time label for the bar, and the host for the calendar popup.
 //
@@ -81,8 +80,11 @@ BarWidget {
   // hey-cli 1.4.0+, "list" on 1.3.x, Omarchy's own package), or "" until
   // the probe has answered, or when it never will. Nothing is fetched until
   // this is known.
-  readonly property string backendName: Backend.info.name
-  readonly property var capabilities: Backend.info.capabilities
+  readonly property var backend: String(setting("backend", "hey")) === "google"
+    ? Google.configured(decodeURIComponent(String(Qt.resolvedUrl("backends/google.py")).replace(/^file:\/\//, "")), String(setting("googleAccount", "")))
+    : Hey
+  readonly property string backendName: backend.info.name
+  readonly property var capabilities: backend.info.capabilities
   property string backendMode: ""
   property string backendVersion: ""
   property bool backendChecked: false
@@ -137,7 +139,10 @@ BarWidget {
       if (!versionProcess.running) versionProcess.running = true
       return
     }
-    if (root.backendMode === "") return
+    if (root.backendMode === "") {
+      if (!versionProcess.running) versionProcess.running = true
+      return
+    }
     requestWeeks(baseWeeks().concat(root.visibleWeeks), force === true)
     if (!calendarsProcess.running) calendarsProcess.running = true
     refreshTimeTrack()
@@ -172,6 +177,7 @@ BarWidget {
   }
 
   function requestWeeks(keys, force) {
+    if (root.backendMode === "") return
     var wanted = []
     for (var i = 0; i < keys.length; i++) {
       var key = keys[i]
@@ -191,7 +197,7 @@ BarWidget {
 
     root.loading = true
     root.fetchingWeeks = wanted
-    weekProcess.command = Backend.fetchCommand(root.backendMode, wanted)
+    weekProcess.command = root.backend.fetchCommand(root.backendMode, wanted)
     weekProcess.running = true
   }
 
@@ -294,7 +300,7 @@ BarWidget {
 
   function finishWrite(exitCode, stdout) {
     root.writing = false
-    var result = Backend.writeResult(exitCode, stdout)
+    var result = root.backend.writeResult(exitCode, stdout)
     var ok = result.ok
     var message = result.message
     root.writeError = ok ? "" : message
@@ -311,38 +317,38 @@ BarWidget {
       root.writeFinished(false, checked.error)
       return false
     }
-    return runWrite(Backend.createCommand(checked.request), form.date)
+    return runWrite(root.backend.createCommand(checked.request), form.date)
   }
 
   function deleteEvent(event, dayKey) {
-    return runWrite(Backend.deleteCommand(event), dayKey)
+    return runWrite(root.backend.deleteCommand(event), dayKey)
   }
 
   function startTimeTrack() {
-    return runWrite(Backend.trackStartCommand(), "")
+    return root.capabilities.timeTracking && runWrite(root.backend.trackStartCommand(), "")
   }
 
   function stopTimeTrack() {
     root.stoppedAt = Date.now()
-    return runWrite(Backend.trackStopCommand(), "")
+    return root.capabilities.timeTracking && runWrite(root.backend.trackStopCommand(), "")
   }
 
   function renameTimeTrack(id, name) {
     root.renameTrackId = ""
-    return runWrite(Backend.trackRenameCommand(id, name), "")
+    return root.capabilities.timeTracking && runWrite(root.backend.trackRenameCommand(id, name), "")
   }
 
   function deleteTimeTrack(id) {
-    return runWrite(Backend.trackDeleteCommand(id), "")
+    return root.capabilities.timeTracking && runWrite(root.backend.trackDeleteCommand(id), "")
   }
 
   // The backend's page for a day, or "" when it has none.
   function dayUrl(dayKey) {
-    return root.capabilities.dayLink ? Backend.dayUrl(dayKey) : ""
+    return root.capabilities.dayLink ? root.backend.dayUrl(dayKey) : ""
   }
 
   function modeNote() {
-    return Backend.modeNote(root.backendMode, root.backendVersion)
+    return root.backend.modeNote(root.backendMode, root.backendVersion)
   }
 
   function openUrl(url) {
@@ -474,14 +480,8 @@ BarWidget {
     id: weekProcess
     running: false
     command: []
-    stdout: StdioCollector {
-      onStreamFinished: root.applyWeeks(weekProcess.exitCode, text)
-    }
-    onExited: function(exitCode) {
-      // A process that dies before its stream finishes never reaches the
-      // collector, so the spinner would stay up forever without this.
-      if (root.loading) root.applyWeeks(exitCode, "")
-    }
+    stdout: StdioCollector { id: weekOutput; waitForEnd: true }
+    onExited: function(exitCode) { root.applyWeeks(exitCode, weekOutput.text) }
   }
 
   // Asked once. The answer decides how weeks are read, and a missing or too
@@ -489,10 +489,10 @@ BarWidget {
   Process {
     id: versionProcess
     running: false
-    command: Backend.probeCommand
+    command: root.backend.probeCommand
     stdout: StdioCollector {
       onStreamFinished: {
-        var probed = Backend.probe(text)
+        var probed = root.backend.probe(text)
         root.backendVersion = probed.version
         root.backendMode = probed.mode
         root.backendChecked = true
@@ -509,7 +509,7 @@ BarWidget {
   Process {
     id: calendarsProcess
     running: false
-    command: Backend.calendarsCommand
+    command: root.backend.calendarsCommand
     stdout: StdioCollector {
       onStreamFinished: {
         var parsed = Cal.parseCalendars(text)
@@ -521,7 +521,7 @@ BarWidget {
   Process {
     id: timeTrackProcess
     running: false
-    command: Backend.currentTrackCommand
+    command: root.backend.currentTrackCommand
     stdout: StdioCollector {
       onStreamFinished: {
         var parsed = Cal.parseCurrentTrack(text)
@@ -533,7 +533,7 @@ BarWidget {
   Process {
     id: timeTracksProcess
     running: false
-    command: Backend.tracksCommand
+    command: root.backend.tracksCommand
     stdout: StdioCollector {
       onStreamFinished: root.applyTimeTracks(text)
     }
@@ -543,17 +543,8 @@ BarWidget {
     id: writeProcess
     running: false
     command: []
-    property bool finished: false
-    onStarted: finished = false
-    stdout: StdioCollector {
-      onStreamFinished: {
-        writeProcess.finished = true
-        root.finishWrite(writeProcess.exitCode, text)
-      }
-    }
-    onExited: function(exitCode) {
-      if (!writeProcess.finished && root.writing) root.finishWrite(exitCode, "")
-    }
+    stdout: StdioCollector { id: writeOutput; waitForEnd: true }
+    onExited: function(exitCode) { root.finishWrite(exitCode, writeOutput.text) }
   }
 
   // ---- Live sync, for backends that can stream their changes (HEY: `hey
@@ -568,21 +559,21 @@ BarWidget {
   Process {
     id: watchProcess
     running: root.liveSync && root.capabilities.watch && root.backendMode !== ""
-    command: Backend.watchCommand
+    command: root.backend.watchCommand
     stdout: SplitParser {
       onRead: function(line) {
-        if (Backend.isWatchChange(line)) changeDebounce.restart()
+        if (root.backend.isWatchChange(line)) changeDebounce.restart()
       }
     }
     // A watch that dies (signed out, network gone, CLI upgraded under it)
     // is restarted after a pause rather than in a tight loop.
-    onExited: if (root.liveSync && root.backendMode !== "") watchRestart.restart()
+    onExited: if (root.liveSync && root.capabilities.watch && root.backendMode !== "") watchRestart.restart()
   }
 
   Timer {
     id: watchRestart
     interval: 60000
-    onTriggered: if (root.liveSync && root.backendMode !== "" && !watchProcess.running) watchProcess.running = true
+    onTriggered: if (root.liveSync && root.capabilities.watch && root.backendMode !== "" && !watchProcess.running) watchProcess.running = true
   }
 
   Loader {

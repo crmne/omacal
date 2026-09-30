@@ -34,7 +34,7 @@ Item {
   readonly property bool past: Cal.hasEnded(event, nowMs)
   readonly property bool current: Cal.isNow(event, nowMs)
   readonly property bool declined: Cal.isDeclined(event)
-  readonly property bool deletable: !!event && !event.recurring && /^\d+$/.test(String(event.seriesId))
+  readonly property bool deletable: !!event && event.writable !== false && !event.recurring && String(event.seriesId) !== ""
   readonly property string timeText: event ? Cal.eventTimeOnDay(event, dayKey, hour24) : ""
   readonly property string metaText: {
     if (!event) return ""
