@@ -33,7 +33,7 @@ draw.multiline_text((160, 690), "Omarchy's own calendar, with your days in it.\n
                     font=mono(40), fill="#b4a6a1", spacing=22)
 features = [
     "Per-calendar chips on every day",
-    "Click a day to see it, HEY style",
+    "See a day, edit an event, HEY style",
     "Your next event in the bar",
     "Quick add with Alt + Shift + Space",
     "Reminders, time tracking, live sync",

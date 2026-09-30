@@ -103,8 +103,9 @@ ShellRoot {
   ]
 
   readonly property var sampleTracks: Cal.parseTimeTracks(JSON.stringify([
-    { id: 1, name: "Writing", named: true, starts_at: at(0, 8, 0), ends_at: at(0, 9, 10) },
-    { id: 2, name: "Client calls", named: true, starts_at: at(0, 14, 30), ends_at: at(0, 15, 15) }
+    // One track, so the busy sample day still fits the panel on a
+    // 1080p-sized screen at Omarchy's default font size.
+    { id: 1, name: "Writing", named: true, starts_at: at(0, 8, 0), ends_at: at(0, 9, 10) }
   ]))
 
   // ---- Stand-ins for the bar and for BarWidget's calendar state.
