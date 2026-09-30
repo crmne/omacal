@@ -390,6 +390,37 @@ test("a timed event with no zone, or a made-up one, is refused rather than guess
   assert.ok(Hey.validateEvent({ title: "X", date: "2026-09-30", startTime: "18:30", timeZone: "--help" }).error)
 })
 
+// HEY keeps a zone per end; hey-cli takes one, so the backend moves an end
+// on another clock onto the start's. Runs the real script, echoing the argv.
+function across(form) {
+  var args = build(form).command
+  assert.strictEqual(args[0], "sh")
+  var at = args.indexOf("timeout")
+  var run = require("child_process").spawnSync(args[0], args.slice(1, at).concat(["echo"], args.slice(at)))
+  return String(run.stdout).trim()
+}
+
+test("an end in another zone is the same instant on the start's clock", function() {
+  var out = across({ title: "Flight", date: "2027-01-05", startTime: "10:00", endTime: "13:00",
+    timeZone: "Europe/Berlin", endTimeZone: "America/New_York" })
+  assert.ok(/--time-zone Europe\/Berlin /.test(out), out)
+  assert.ok(/--ends-on 2027-01-05 --end-time 19:00$/.test(out), out)
+  out = across({ title: "Red-eye", date: "2027-01-05", startTime: "22:00", endTime: "06:00",
+    timeZone: "America/New_York", endTimeZone: "Europe/Berlin" })
+  assert.ok(/--ends-on 2027-01-06 --end-time 00:00$/.test(out), out)
+})
+
+test("the end's zone is ignored when it is the start's, and checked when it is not", function() {
+  var args = build({ title: "X", date: "2027-01-05", startTime: "10:00", endTime: "11:00",
+    timeZone: "Europe/Berlin", endTimeZone: "Europe/Berlin" }).command
+  assert.strictEqual(args[0], "timeout")
+  assert.ok(Hey.validateEvent({ title: "X", date: "2027-01-05", startTime: "10:00", endTime: "11:00",
+    timeZone: "Europe/Berlin", endTimeZone: "Nowhere" }).error)
+  // No end time: an hour after the start, whatever the end's zone says.
+  args = build({ title: "X", date: "2027-01-05", startTime: "10:00", timeZone: "Europe/Berlin", endTimeZone: "Asia/Tokyo" }).command
+  assert.strictEqual(args[0], "timeout")
+})
+
 test("an all-day event needs no zone and sends none", function() {
   var args = build({ title: "Holiday", date: "2026-09-30", allDay: true, timeZone: "" }).command
   assert.strictEqual(args.indexOf("--time-zone"), -1)

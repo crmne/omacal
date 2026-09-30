@@ -18,9 +18,10 @@ plug in as backends (see [Backends](#backends)).
   title, day, calendar, all-day or a time range, place, reminder. Days and
   times are typed loosely: `fri`, `tomorrow`, `next mon`, `3 oct` for the
   day, `9`, `930`, `9:30pm`, `21.30` for times. An end before the start
-  means the next morning. Times are this machine's local time; type a city
-  in the zone field (`new york`, `tokyo`) to write them in another zone, as
-  in HEY's own form.
+  means the next morning. As in HEY's own form, the start and the end each
+  have a zone: this machine's local time unless you type a city (`new york`,
+  `tokyo`), and the end's the same as the start's unless you give it its
+  own, for a flight from Berlin at 10:00 to New York at 13:00.
 - **Quick add from anywhere.** **Alt+Shift+Space** opens the same form as a
   card in the middle of the screen, like OmaTasks' quick add. The shortcut
   is bound in Hyprland by the plugin, never over one that is already taken,
@@ -124,7 +125,7 @@ where the focus is.
 | --- | --- |
 | `Tab` / `Shift+Tab` | Next / previous field, the calendar and reminder rows included |
 | `←` `→` | On the calendar row: switch calendar. On the reminder row: switch reminder. On all day: toggle |
-| `↑` `↓` | In a time: 15 minutes earlier or later. In the day: a day (`Shift`: a week). In the zone: the previous or next match |
+| `↑` `↓` | In a time: 15 minutes earlier or later. In the day: a day (`Shift`: a week). In a zone: the previous or next match |
 | `Alt+←` `Alt+→` | Switch calendar, from any field |
 | `Alt+↑` `Alt+↓` | Switch reminder, from any field |
 | `Alt+A` | Toggle all day, from any field |
@@ -172,6 +173,10 @@ and `lastCalendarId` (the calendar the last new event went on).
 HEY's day titles, photos and "Sometime this week" are not exposed by
 hey-cli, so they are not here yet. Day titles are in HEY's API
 (`Calendar::DayTitle`), and are the first candidate for a hey-cli addition.
+
+HEY keeps a zone for each end of an event, but `hey event add` takes one
+`--time-zone` for both. An end given its own zone is saved at the right
+moment, moved onto the start's clock, so HEY shows it in the start's zone.
 
 ## Backends
 

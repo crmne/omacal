@@ -1215,9 +1215,12 @@ function zoneLabel(name) {
 
 // Checks the new-event form and turns it into the request a backend's
 // createCommand takes: { title, date, allDay, startTime, endTime, endDate,
-// timeZone, calendarId, location, remind }, times as HH:MM in timeZone, the
-// end date worked out. A timed event must name its zone (the form passes
-// this machine's unless another is picked). Returns { error } or { request }.
+// timeZone, endTimeZone, calendarId, location, remind }, times as HH:MM.
+// A timed event must name its zone (the form passes this machine's unless
+// another is picked). The end is in timeZone too, with its date worked out,
+// unless endTimeZone names another: then the end's clock is in that zone,
+// and it is the backend's to place it (the end date is the first on which
+// it falls after the start). Returns { error } or { request }.
 function validateEvent(form) {
   var f = form || {}
   var title = String(f.title || "").replace(/^\s+|\s+$/g, "")
@@ -1226,7 +1229,7 @@ function validateEvent(form) {
   if (!isDayKey(f.date)) return { error: "Pick a day." }
 
   var request = { title: title, date: f.date, allDay: f.allDay === true, startTime: "", endTime: "",
-    endDate: f.date, timeZone: "", calendarId: Number(f.calendarId) > 0 ? Math.round(Number(f.calendarId)) : 0,
+    endDate: f.date, timeZone: "", endTimeZone: "", calendarId: Number(f.calendarId) > 0 ? Math.round(Number(f.calendarId)) : 0,
     location: String(f.location || "").replace(/^\s+|\s+$/g, "").substr(0, 256), remind: "" }
 
   if (request.allDay) {
@@ -1246,11 +1249,18 @@ function validateEvent(form) {
     if (endText !== "") {
       var end = parseClock(endText)
       if (end === "") return { error: "The end time is not a time." }
-      if (clockMinutes(end) === clockMinutes(start)) return { error: "It has to end after it starts." }
-      // An end before the start is read as the next morning, the way you
-      // mean "22:00 to 01:00".
-      if (clockMinutes(end) < clockMinutes(start)) request.endDate = addDays(f.date, 1)
       request.endTime = end
+      var endZone = String(f.endTimeZone || "")
+      if (endZone !== "" && endZone !== zone) {
+        // Clocks in two zones do not compare; the backend works out the day.
+        if (!isZoneName(endZone)) return { error: "“" + endZone + "” is not a time zone I know." }
+        request.endTimeZone = endZone
+      } else {
+        if (clockMinutes(end) === clockMinutes(start)) return { error: "It has to end after it starts." }
+        // An end before the start is read as the next morning, the way you
+        // mean "22:00 to 01:00".
+        if (clockMinutes(end) < clockMinutes(start)) request.endDate = addDays(f.date, 1)
+      }
     }
   }
 

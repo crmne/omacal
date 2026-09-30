@@ -218,6 +218,7 @@ function isWatchChange(line) {
 function createCommand(request) {
   var r = request || {}
   var args = ["timeout", "-k", "3", "30", "hey", "event", "add", "--title", r.title, "--starts-on", r.date]
+  var across = false
   if (r.allDay) {
     args.push("--all-day")
     if (r.endDate && r.endDate !== r.date) args.push("--ends-on", r.endDate)
@@ -225,15 +226,37 @@ function createCommand(request) {
     // Every hey-cli from 1.3.0 takes --time-zone; without it the clock
     // times land in UTC or the HEY account's zone (see Calendar.js).
     args.push("--start-time", r.startTime, "--time-zone", r.timeZone)
-    if (r.endDate && r.endDate !== r.date) args.push("--ends-on", r.endDate)
-    if (r.endTime) args.push("--end-time", r.endTime)
+    across = !!r.endTime && !!r.endTimeZone && r.endTimeZone !== r.timeZone
+    if (!across) {
+      if (r.endDate && r.endDate !== r.date) args.push("--ends-on", r.endDate)
+      if (r.endTime) args.push("--end-time", r.endTime)
+    }
   }
   if (Number(r.calendarId) > 0) args.push("--calendar", String(Math.round(Number(r.calendarId))))
   if (r.location) args.push("--location", r.location)
   if (r.remind) args.push("--remind", r.remind)
   args.push("--json")
-  return args
+  if (!across) return args
+  return ["sh", "-c", acrossZonesScript, "sh", r.timeZone, r.date, r.startTime, r.endTimeZone, r.endTime].concat(args)
 }
+
+// HEY keeps a zone for each end of an event, but `hey event add` takes one
+// --time-zone for both. An end on another clock (a flight from Berlin at
+// 10:00 to New York at 13:00) is moved onto the start's with GNU date: the
+// same instant, as the start's zone reads it, on the first day it falls
+// after the start. HEY then shows that end on the start's clock.
+// Arguments: start zone, start day, start time, end zone, end time, then
+// the hey command. Answers in HEY's JSON envelope when it cannot.
+var acrossZonesScript =
+  "tz=$1 day=$2 start=$3 ez=$4 et=$5; shift 5; " +
+  "fail() { printf '{\"ok\":false,\"error\":\"%s\"}\\n' \"$1\"; exit 1; }; " +
+  "s=$(TZ=$tz date -d \"$day $start\" +%s) || fail 'Could not read the start time.'; " +
+  "e=$(TZ=$ez date -d \"$day $et\" +%s) || fail 'Could not read the end time.'; " +
+  "if [ \"$e\" -le \"$s\" ]; then " +
+  "next=$(date -d \"$day +1 day\" +%F) && e=$(TZ=$ez date -d \"$next $et\" +%s) || fail 'Could not read the end time.'; fi; " +
+  "[ \"$e\" -gt \"$s\" ] || fail 'It has to end after it starts.'; " +
+  "end=$(TZ=$tz date -d \"@$e\" '+%F %H:%M') || fail 'Could not read the end time.'; " +
+  "exec \"$@\" --ends-on \"${end% *}\" --end-time \"${end#* }\""
 
 function deleteCommand(event) {
   if (!event || event.recurring) return []

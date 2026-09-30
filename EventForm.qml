@@ -10,15 +10,18 @@ import "Calendar.js" as Cal
 //
 // Days and times are typed, not picked: "fri", "tomorrow", "3 oct" for the
 // day; "9", "930", "9:30pm", "21.30" for times. An end earlier than the
-// start is read as the next morning. Times are this machine's local time
-// unless a zone is typed ("new york", "tokyo"), as in HEY's own form. The event
+// start is read as the next morning. Like HEY's own form, the start and the
+// end each have a zone: this machine's unless one is typed ("new york",
+// "tokyo"), and the end's the same as the start's unless it is given its
+// own, for a flight that leaves Berlin at 10:00 and lands in New York at
+// 13:00. The event
 // is created through `hey event add`, so HEY applies its own defaults to
 // anything left blank.
 //
 // Built to be used without a mouse. Tab and Shift+Tab walk every field,
 // the calendar row and the reminder row included; on those rows the arrow
 // keys pick. Up and Down nudge a time by a quarter hour and the day by one
-// (Shift: a week); in the zone field they pick among the matches. From any field, Alt+Left/Right switches calendar,
+// (Shift: a week); in a zone field they pick among the matches. From any field, Alt+Left/Right switches calendar,
 // Alt+Up/Down the reminder, and Alt+A toggles all day. Enter creates,
 // Escape cancels. A hint line says what the keys do where the focus is.
 Item {
@@ -51,7 +54,8 @@ Item {
   property alias startInput: startField.text
   property alias endInput: endField.text
   property alias locationInput: locationField.text
-  property alias zoneInput: zoneField.text
+  property alias zoneInput: startZone.text
+  property alias endZoneInput: endZone.text
   property int calendarId: 0
   property bool allDay: false
   property string remind: "30m"
@@ -61,24 +65,6 @@ Item {
   property bool loadZones: true
   property string localZone: ""
   property var zones: []
-  property int zoneCursor: 0
-  readonly property string zoneQuery: zoneField.text.replace(/^\s+|\s+$/g, "")
-  readonly property var zoneMatches: Cal.matchZones(root.zones, root.zoneQuery, 5)
-  // The zone the times are written in: this machine's while the field is
-  // empty, else the highlighted match, else whatever was typed (refused on
-  // submit when it names no zone).
-  readonly property string chosenZone: {
-    if (root.zoneQuery === "") return root.localZone
-    if (root.zoneMatches.length > 0) return root.zoneMatches[Math.min(root.zoneCursor, root.zoneMatches.length - 1)]
-    return root.zoneQuery
-  }
-  readonly property string zoneStatus: {
-    if (root.zoneQuery === "") return root.localZone !== "" ? "Local time" : "Type a zone: I could not tell this machine's"
-    if (root.zoneMatches.length === 0) return "Not a zone I know"
-    if (root.chosenZone === root.localZone) return "Local time"
-    return Cal.zoneLabel(root.chosenZone)
-  }
-
   readonly property var reminderValues: ["", "10m", "30m", "1h", "1d"]
   readonly property var calendarIds: {
     var ids = []
@@ -97,7 +83,8 @@ Item {
     if (remindRow.activeFocus) return "←→ reminder · Tab next · Enter add · Esc cancel"
     if (allDayRow.activeFocus) return "Space all day · Tab next · Enter add · Esc cancel"
     if (dateField.activeFocus) return "↑↓ day, Shift a week · Tab next · Alt+←→ calendar · Enter add"
-    if (zoneField.activeFocus) return "Type a city · ↑↓ pick · empty is local time · Tab next · Enter add"
+    if (startZone.field.activeFocus) return "Type a city · ↑↓ pick · empty is local time · Tab next · Enter add"
+    if (endZone.field.activeFocus) return "Type a city · ↑↓ pick · empty is the start's zone · Tab next · Enter add"
     if (startField.activeFocus || endField.activeFocus) return "↑↓ 15 min · Tab next · Alt+←→ calendar · Enter add"
     return "Tab next field · Alt+←→ calendar · Alt+↑↓ reminder · Alt+A all day · Enter add"
   }
@@ -119,8 +106,8 @@ Item {
     var start = Cal.suggestedStart(day, new Date())
     startField.text = start
     endField.text = ""
-    zoneField.text = ""
-    root.zoneCursor = 0
+    startZone.reset()
+    endZone.reset()
     root.allDay = false
     root.remind = "30m"
     root.localError = ""
@@ -162,7 +149,8 @@ Item {
       allDay: root.allDay,
       startTime: startField.text,
       endTime: endField.text,
-      timeZone: root.allDay ? "" : root.chosenZone,
+      timeZone: root.allDay ? "" : startZone.chosen,
+      endTimeZone: root.allDay ? "" : endZone.chosen,
       calendarId: root.calendarId,
       location: locationField.text,
       remind: root.remind
@@ -172,7 +160,7 @@ Item {
   // Tab order, skipping the time fields while the event is all day.
   function focusOrder() {
     var order = [titleField, dateField, calendarRow, allDayRow]
-    if (!root.allDay) order.push(startField, endField, zoneField)
+    if (!root.allDay) order.push(startField, endField, startZone.field, endZone.field)
     order.push(locationField, remindRow)
     return order
   }
@@ -221,10 +209,6 @@ Item {
     else if (item === remindRow && left) stepReminder(-1)
     else if (item === remindRow && right) stepReminder(1)
     else if (item === allDayRow && (key === Qt.Key_Space || left || right)) root.allDay = !root.allDay
-    else if (item === zoneField && (key === Qt.Key_Up || key === Qt.Key_Down)) {
-      if (root.zoneMatches.length > 0)
-        root.zoneCursor = (root.zoneCursor + (key === Qt.Key_Up ? -1 : 1) + root.zoneMatches.length) % root.zoneMatches.length
-    }
     else if (item === dateField && key === Qt.Key_Up) stepDay(shift ? -7 : -1)
     else if (item === dateField && key === Qt.Key_Down) stepDay(shift ? 7 : 1)
     else if (item === startField && (key === Qt.Key_Up || key === Qt.Key_Down))
@@ -239,7 +223,14 @@ Item {
   }
 
   onCalendarsChanged: if (root.calendarId === 0) root.calendarId = pickCalendar(root.defaultCalendarId)
-  onZoneQueryChanged: root.zoneCursor = 0
+
+  TextMetrics {
+    id: zoneLabelMetrics
+    font.family: root.fontFamily
+    font.pixelSize: Style.font.bodySmall
+    font.letterSpacing: 1
+    text: "START ZONE"
+  }
 
   Process {
     id: zonesProcess
@@ -437,85 +428,41 @@ Item {
       }
     }
 
-    // On whose clock the times are: this machine's unless a zone is typed.
-    Row {
+    // On whose clock each time is, as HEY asks it: the start's is this
+    // machine's unless one is typed, the end's the start's unless it has
+    // its own.
+    ZoneField {
+      id: startZone
       visible: !root.allDay
       width: parent.width
-      spacing: Style.space(10)
-
-      Text {
-        anchors.verticalCenter: parent.verticalCenter
-        text: "ZONE"
-        color: Qt.darker(root.foreground, 1.5)
-        font.family: root.fontFamily
-        font.pixelSize: Style.font.bodySmall
-        font.letterSpacing: 1
-      }
-
-      TextField {
-        id: zoneField
-        width: Style.space(170)
-        anchors.verticalCenter: parent.verticalCenter
-        placeholderText: root.localZone !== "" ? Cal.zoneLabel(root.localZone) : "Area/City"
-        foreground: root.foreground
-        font.family: root.fontFamily
-        Keys.onPressed: function(event) { root.handleKey(event, zoneField) }
-        // Leaving the field spells out the zone it settled on, so what is
-        // shown is what is sent.
-        onActiveFocusChanged: {
-          if (!activeFocus && root.zoneQuery !== "" && root.zoneMatches.length > 0)
-            text = root.chosenZone === root.localZone ? "" : root.chosenZone
-        }
-      }
-
-      Text {
-        anchors.verticalCenter: parent.verticalCenter
-        textFormat: Text.PlainText
-        text: root.zoneStatus
-        color: root.zoneQuery !== "" && root.zoneMatches.length === 0 || root.localZone === "" && root.zoneQuery === ""
-          ? Color.urgent : Qt.darker(root.foreground, 1.4)
-        font.family: root.fontFamily
-        font.pixelSize: Style.font.bodySmall
-      }
+      label: "START ZONE"
+      labelWidth: zoneLabelMetrics.advanceWidth
+      zones: root.zones
+      localZone: root.localZone
+      fallback: root.localZone
+      fallbackStatus: "Local time"
+      fallbackPlaceholder: root.localZone !== "" ? Cal.zoneLabel(root.localZone) : "Area/City"
+      foreground: root.foreground
+      accent: root.accent
+      fontFamily: root.fontFamily
+      keyHandler: root.handleKey
     }
 
-    // The zones the typing could mean, the highlighted one chosen.
-    Flow {
-      visible: !root.allDay && zoneField.activeFocus && root.zoneMatches.length > 1
+    ZoneField {
+      id: endZone
+      visible: !root.allDay
       width: parent.width
-      spacing: Style.space(6)
-
-      Repeater {
-        model: root.zoneMatches
-
-        Rectangle {
-          required property var modelData
-          required property int index
-          readonly property bool chosen: index === Math.min(root.zoneCursor, root.zoneMatches.length - 1)
-          width: zoneName.implicitWidth + Style.space(16)
-          height: zoneName.implicitHeight + Style.space(6)
-          radius: height / 2
-          color: chosen ? Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.25) : "transparent"
-          border.width: 1
-          border.color: chosen ? root.accent : Qt.darker(root.foreground, 2.2)
-
-          Text {
-            id: zoneName
-            anchors.centerIn: parent
-            textFormat: Text.PlainText
-            text: Cal.zoneLabel(modelData)
-            color: root.foreground
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.bodySmall
-          }
-
-          MouseArea {
-            anchors.fill: parent
-            cursorShape: Qt.PointingHandCursor
-            onClicked: root.zoneCursor = index
-          }
-        }
-      }
+      label: "END ZONE"
+      labelWidth: zoneLabelMetrics.advanceWidth
+      zones: root.zones
+      localZone: root.localZone
+      fallback: startZone.chosen
+      fallbackStatus: "Same as the start"
+      fallbackPlaceholder: "Same as the start"
+      foreground: root.foreground
+      accent: root.accent
+      fontFamily: root.fontFamily
+      keyHandler: root.handleKey
     }
 
     TextField {
