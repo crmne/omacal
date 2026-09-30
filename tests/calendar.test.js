@@ -442,6 +442,8 @@ test("a typed zone filter puts the likeliest city first", function() {
   assert.strictEqual(Hey.matchZones(["Arctic/Longyearbyen", "Europe/London"], "lon")[0], "Europe/London")
   assert.deepStrictEqual(Hey.matchZones(zones, "  "), [])
   assert.strictEqual(Hey.zoneLabel("America/New_York"), "America/New York")
+  assert.strictEqual(Hey.zoneCity("America/Argentina/Buenos_Aires"), "Buenos Aires")
+  assert.strictEqual(Hey.zoneCity("UTC"), "UTC")
 })
 
 test("repeating events are never deleted by series id", function() {

@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "crmne.omacal",
   "name": "OmaCal",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "author": "Carmine Paolino",
   "license": "MIT",
   "description": "Omarchy's stock clock and calendar with your calendar laid over it: per-calendar event chips on the month grid, a day view, new events from the panel or a quick-add shortcut, reminders as notifications, the next event in the bar, and time tracking. HEY is the first backend.",

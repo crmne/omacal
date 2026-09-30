@@ -1213,6 +1213,14 @@ function zoneLabel(name) {
   return String(name || "").replace(/_/g, " ")
 }
 
+// The city a zone is named for, as HEY shows it under a time:
+// "America/New_York" is "New York", "America/Argentina/Buenos_Aires" is
+// "Buenos Aires".
+function zoneCity(name) {
+  var parts = String(name || "").split("/")
+  return parts[parts.length - 1].replace(/_/g, " ")
+}
+
 // Checks the new-event form and turns it into the request a backend's
 // createCommand takes: { title, date, allDay, startTime, endTime, endDate,
 // timeZone, endTimeZone, calendarId, location, remind }, times as HH:MM.
@@ -1441,6 +1449,7 @@ if (typeof module !== "undefined") {
     parseZones: parseZones,
     matchZones: matchZones,
     zoneLabel: zoneLabel,
+    zoneCity: zoneCity,
     formatTime: formatTime,
     eventRangeLabel: eventRangeLabel,
     eventTimeOnDay: eventTimeOnDay,
