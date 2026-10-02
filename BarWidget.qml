@@ -266,8 +266,11 @@ BarWidget {
     for (var key in root.shownReminders) shown[key] = root.shownReminders[key]
     for (var i = 0; i < due.length; i++) {
       shown[due[i].key] = now
-      Quickshell.execDetached(Cal.notifyCommand(due[i].event, now, root.hour24,
-        root.dayUrl(Cal.eventDayKeys(due[i].event)[0] || ""), due[i].remindMs))
+      var reminder = Cal.notifyCommand(due[i].event, now, root.hour24,
+        root.dayUrl(Cal.eventDayKeys(due[i].event)[0] || ""), due[i].remindMs)
+      notifyProcess.command = reminder.command
+      notifyProcess.environment = reminder.environment
+      notifyProcess.startDetached()
     }
     // Forgets what is long past, so the set does not grow for as long as the
     // shell runs.
@@ -499,6 +502,15 @@ BarWidget {
     repeat: true
     triggeredOnStart: true
     onTriggered: root.checkReminders()
+  }
+
+  // Never run itself: each reminder starts a detached copy, which outlives
+  // this widget and carries the event's text in its environment, not its
+  // arguments (see notifyCommand). execDetached takes only arguments.
+  Process {
+    id: notifyProcess
+    running: false
+    command: []
   }
 
   Process {

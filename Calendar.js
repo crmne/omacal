@@ -940,9 +940,16 @@ function notificationBody(event, nowMs, hour24) {
   return lines.join("\n")
 }
 
-// The notification, and what to open if it is clicked. notify-send waits for
-// the answer, which is why this runs detached. The text and the link are
-// arguments, never interpolated.
+// The notification, and what to open if it is clicked. It waits for the
+// answer, which is why this runs detached.
+//
+// Event titles, calendars, places and links are private, and a process's
+// arguments are readable by every user on the machine (/proc/<pid>/cmdline),
+// so none of it goes on a command line: it travels in the environment, which
+// only this user can read, and the notification is sent over D-Bus from
+// Python instead of through notify-send, which only takes it as arguments.
+// The system Python, because it has PyGObject on Omarchy and a mise or
+// virtualenv one first on PATH may not.
 //
 // Every monitor's bar runs its own widget, and each would send the same
 // reminder. The first to create the reminder's marker directory claims it
@@ -952,15 +959,43 @@ function notificationBody(event, nowMs, hour24) {
 // The icon is a small calendar page in the event's calendar colour with its
 // day on it, written once per colour and day next to the markers.
 var notifyScript = [
-  "dir=\"${XDG_RUNTIME_DIR:-/tmp}/omacal\"",
-  "mkdir -p \"$dir/shown\" || exit 0",
-  "find \"$dir/shown\" -mindepth 1 -maxdepth 1 -mmin +2880 -exec rm -rf {} + 2>/dev/null",
-  "mkdir \"$dir/shown/$4\" 2>/dev/null || exit 0",
-  "icon=\"$dir/$5\"",
-  "[ -s \"$icon\" ] || printf '%s' \"$6\" > \"$icon\"",
-  "choice=$(notify-send --app-name='OmaCal' --icon=\"$icon\""
-    + " --action=default=Open \"$1\" \"$2\" 2>/dev/null)",
-  "if [ \"$choice\" = default ] && [ -n \"$3\" ]; then xdg-open \"$3\" >/dev/null 2>&1; fi"
+  "import os, shutil, sys, time",
+  "from gi.repository import Gio, GLib",
+  "env = {k: os.environ.pop('OMACAL_' + k, '') for k in ('TITLE', 'BODY', 'LINK', 'MARKER', 'ICON', 'SVG')}",
+  "base = os.path.join(os.environ.get('XDG_RUNTIME_DIR') or '/tmp', 'omacal')",
+  "shown = os.path.join(base, 'shown')",
+  "try:",
+  "    os.makedirs(shown, exist_ok=True)",
+  "    for name in os.listdir(shown):",
+  "        path = os.path.join(shown, name)",
+  "        if os.path.getmtime(path) < time.time() - 2 * 86400:",
+  "            shutil.rmtree(path, ignore_errors=True)",
+  "    os.mkdir(os.path.join(shown, env['MARKER']))",
+  "except OSError:",
+  "    sys.exit(0)",
+  "icon = os.path.join(base, env['ICON'])",
+  "if not os.path.isfile(icon) or os.path.getsize(icon) == 0:",
+  "    with open(icon, 'w') as f:",
+  "        f.write(env['SVG'])",
+  "loop = GLib.MainLoop()",
+  "sent = [None]",
+  "def answered(bus, sender, path, iface, signal, params, data):",
+  "    if params[0] != sent[0]: return",
+  "    if signal == 'ActionInvoked' and params[1] == 'default' and env['LINK']:",
+  "        Gio.AppInfo.launch_default_for_uri(env['LINK'], None)",
+  "    loop.quit()",
+  "try:",
+  "    bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)",
+  "    bus.signal_subscribe('org.freedesktop.Notifications', 'org.freedesktop.Notifications', None,",
+  "        '/org/freedesktop/Notifications', None, Gio.DBusSignalFlags.NONE, answered, None)",
+  "    sent[0] = bus.call_sync('org.freedesktop.Notifications', '/org/freedesktop/Notifications',",
+  "        'org.freedesktop.Notifications', 'Notify',",
+  "        GLib.Variant('(susssasa{sv}i)', ('OmaCal', 0, icon, env['TITLE'], env['BODY'], ['default', 'Open'], {}, -1)),",
+  "        GLib.VariantType('(u)'), Gio.DBusCallFlags.NONE, -1, None).unpack()[0]",
+  "except GLib.Error:",
+  "    sys.exit(0)",
+  "GLib.timeout_add_seconds(86400, loop.quit)",
+  "loop.run()"
 ].join("\n")
 
 // A calendar page: the calendar's colour, a darker band with two rings,
@@ -984,16 +1019,24 @@ function reminderMarker(key) {
 
 // `fallbackLink` is where a click goes when the event has no link of its
 // own: the backend's page for its day, if it has one. `remindMs` names the
-// reminder, so each of an event's reminders is claimed separately.
+// reminder, so each of an event's reminders is claimed separately. Returns a
+// command with no event text in it, and the environment that carries it.
 function notifyCommand(event, nowMs, hour24, fallbackLink, remindMs) {
   var link = event.joinUrl || event.url || safeUrl(fallbackLink)
   var firstDay = eventDayKeys(event)[0] || keyForDate(new Date(nowMs))
   var day = parseInt(firstDay.substr(8, 2), 10)
   var color = calendarColor(event.color, todayColor).replace("#", "")
-  return ["bash", "-c", notifyScript, "omacal",
-    event.title, notificationBody(event, nowMs, hour24), link,
-    reminderMarker(reminderKey(event, remindMs === undefined ? nowMs : remindMs)),
-    "icon-" + color + "-" + day + ".svg", notificationIcon(event.color, day)]
+  return {
+    command: ["/usr/bin/python3", "-c", notifyScript],
+    environment: {
+      OMACAL_TITLE: String(event.title || ""),
+      OMACAL_BODY: notificationBody(event, nowMs, hour24),
+      OMACAL_LINK: link || "",
+      OMACAL_MARKER: reminderMarker(reminderKey(event, remindMs === undefined ? nowMs : remindMs)),
+      OMACAL_ICON: "icon-" + color + "-" + day + ".svg",
+      OMACAL_SVG: notificationIcon(event.color, day)
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------

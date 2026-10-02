@@ -80,6 +80,7 @@ The screenshots are the real plugin with a made-up calendar
   - **hey-cli 1.3.0 or newer**, signed in (`hey setup`). 1.3.0 is the version
   Omarchy installs, so a stock system works as is.
   - `jq` (part of Omarchy)
+- For reminders: `/usr/bin/python3` with PyGObject (both part of Omarchy)
 
 ### hey-cli versions
 
@@ -123,8 +124,12 @@ network requests of its own and stores no credentials. For HEY:
 `edit` and `delete`, `hey timetrack`, and a long-running `hey watch` for live
 sync. Every call is bounded by `timeout` and `head -c`, and takes its input
 as arguments, never as shell text. Event text is length-capped and drawn as
-plain text, and only `https` links are handed to `xdg-open`. It also runs
-`notify-send` for reminders and `hyprctl` to bind the quick-add shortcut.
+plain text, and only `https` links are handed to `xdg-open`. Reminders are
+sent to the notification daemon over D-Bus by the system `python3` (with
+PyGObject, part of Omarchy), which gets the event's title, calendar, place
+and link in its environment rather than its arguments, so other users on the
+machine cannot read them from the process list. `hyprctl` binds the
+quick-add shortcut.
 
 ## Keys
 

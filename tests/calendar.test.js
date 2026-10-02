@@ -292,12 +292,27 @@ test("due reminders fire once, and never for what came due before start", functi
 test("a reminder carries a safe marker and a calendar-coloured icon", function() {
   var e = Hey.normalizeEvent({ id: 7, title: "Stand-up; rm -rf /", starts_at: "2026-09-29T09:30:00Z",
     ends_at: "2026-09-29T09:45:00Z", color: "blue", reminders: ["2026-09-29T09:15:00Z"] })
+  var env = Hey.notifyCommand(e, e.startMs - 15 * 60000, true, "", e.reminders[0]).environment
+  assert.ok(/^[A-Za-z0-9_-]+$/.test(env.OMACAL_MARKER), env.OMACAL_MARKER)
+  assert.ok(/^icon-6baffc-\d{1,2}\.svg$/.test(env.OMACAL_ICON), env.OMACAL_ICON)
+  assert.ok(env.OMACAL_SVG.indexOf('fill="#6baffc"') !== -1)
+  assert.strictEqual(env.OMACAL_TITLE, "Stand-up; rm -rf /")
+})
+
+// Any user can read a process's arguments, but only its owner its environment.
+test("a reminder keeps the event's details off the command line", function() {
+  var e = Hey.normalizeEvent({ id: 8, title: "Doctor appointment", starts_at: "2026-09-29T09:30:00Z",
+    ends_at: "2026-09-29T10:30:00Z", calendar: "Private", location: "12 Secret Street",
+    join_url: "https://meet.example.com/abc-defg-hij", reminders: ["2026-09-29T09:15:00Z"] })
   var cmd = Hey.notifyCommand(e, e.startMs - 15 * 60000, true, "", e.reminders[0])
-  var marker = cmd[7], iconName = cmd[8], svg = cmd[9]
-  assert.ok(/^[A-Za-z0-9_-]+$/.test(marker), marker)
-  assert.ok(/^icon-6baffc-\d{1,2}\.svg$/.test(iconName), iconName)
-  assert.ok(svg.indexOf('fill="#6baffc"') !== -1)
-  assert.strictEqual(cmd[4], "Stand-up; rm -rf /")
+  var argv = cmd.command.join("\n")
+  ;["Doctor appointment", "Private", "12 Secret Street", "meet.example.com"].forEach(function(secret) {
+    assert.strictEqual(argv.indexOf(secret), -1, secret)
+  })
+  assert.strictEqual(cmd.command[0], "/usr/bin/python3")
+  assert.strictEqual(cmd.environment.OMACAL_TITLE, "Doctor appointment")
+  assert.ok(cmd.environment.OMACAL_BODY.indexOf("12 Secret Street") !== -1)
+  assert.strictEqual(cmd.environment.OMACAL_LINK, "https://meet.example.com/abc-defg-hij")
 })
 
 test("declined events never notify", function() {
