@@ -169,6 +169,16 @@ The stock ones all work: arrows, `[` `]` months, `{` `}` years, `T` today,
 
 ## Settings
 
+**Today only** is an optional switch at the top of the settings panel. It is
+**off by default**, preserving the original reminder-based bar behavior.
+Turn it on to show only events happening today, including overnight events.
+Today's imminent and ongoing events come first; otherwise the bar shows
+today's next timed event without waiting for its reminder. All-day events
+cannot hide that next meeting. If no timed event remains, today's all-day
+events can appear. Future birthdays stay out of the bar even when their
+reminders are active. Notifications are unchanged in either mode.
+The switch saves immediately and does not require a shell restart.
+
 The gear button in the panel (or `S`) opens the settings, right under the
 calendar. Omarchy does not draw settings screens for plugin widgets yet, so
 they live there. Tab walks them, arrows pick, Enter applies, Esc goes back.
@@ -177,6 +187,7 @@ at once, so it can be edited there too.
 
 | Key | Default | Meaning |
 | --- | --- | --- |
+| `todayOnly` | `false` | Limit the bar to today's current or next event. Off restores the original reminder windows. Notifications are unchanged. |
 | `barEvent` | `soon` | `soon`: name an event in the bar from its earliest reminder until it ends. `name`: the same, but only the title. `time`: the same, but only when (`in 12m`). `next`: always name today's next event. `off`: the glyph only. |
 | `notifications` | `true` | Show HEY reminders as notifications. |
 | `quickAddShortcut` | `ALT + SHIFT + SPACE` | Opens the quick-add card. Empty turns it off. |

@@ -46,7 +46,7 @@ BarWidget {
   // Every event inside its alert window (from its earliest HEY reminder
   // until it ends), most pressing first; the bar names the first and counts
   // the rest.
-  readonly property var shownEvents: Cal.barSelection(barEventMode, events, todayEvents, displayDate.getTime(), alertLeadMinutes)
+  readonly property var shownEvents: Cal.barSelection(barEventMode, events, todayEvents, displayDate.getTime(), alertLeadMinutes, setting("todayOnly", false) === true)
   readonly property string eventText: Cal.barLabel(shownEvents, displayDate.getTime(), hour24, barEventMode)
   readonly property string displayText: eventText !== ""
     ? calendarGlyph + " " + eventText + "   " + dateText

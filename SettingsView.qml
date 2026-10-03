@@ -152,6 +152,16 @@ FocusScope {
     }
 
     // ---- Bar
+    Toggle {
+      width: parent.width
+      label: "Today only"
+      description: "Hide future events."
+      checked: root.value("todayOnly", false) === true
+      foreground: root.foreground
+      fontFamily: root.fontFamily
+      onClicked: root.save("todayOnly", !checked)
+    }
+
     Label { text: "EVENT IN THE BAR" }
 
     ButtonGroup {

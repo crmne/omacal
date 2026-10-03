@@ -845,8 +845,16 @@ function barEvents(events, nowMs, leadMinutes) {
 // default) those inside their alert windows, "name" and "time" the same
 // with only their titles or only when, "next" the next one left today all
 // day, "off" none.
-function barSelection(mode, events, todayEvents, nowMs, leadMinutes) {
+function barSelection(mode, events, todayEvents, nowMs, leadMinutes, todayOnly) {
   if (mode === "off") return []
+  // Optional today's-agenda behavior. The default path below stays unchanged.
+  if (todayOnly === true) {
+    var activeToday = barEvents(todayEvents, nowMs, leadMinutes)
+    var nextToday = currentOrNextEvent(todayEvents, nowMs)
+    if (nextToday && !nextToday.allDay && (activeToday.length === 0 || activeToday[0].allDay)) return [nextToday]
+    if (activeToday.length > 0) return activeToday
+    return nextToday ? [nextToday] : []
+  }
   if (mode === "next") {
     var open = barEvents(events, nowMs, leadMinutes)
     if (open.length > 0) return open

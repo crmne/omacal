@@ -36,9 +36,17 @@
       "timeFormat": "auto",
       "refreshIntervalSec": 300,
       "quickAddShortcut": "ALT + SHIFT + SPACE",
-      "barEvent": "soon"
+      "barEvent": "soon",
+      "todayOnly": false
     },
     "schema": [
+      {
+        "key": "todayOnly",
+        "type": "boolean",
+        "label": "Today only",
+        "defaultValue": false,
+        "description": "Show today's current or next event, excluding future reminder windows. Off preserves the original bar behavior. Reminder notifications are unchanged."
+      },
       {
         "key": "barEvent",
         "type": "enum",
