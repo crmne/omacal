@@ -64,7 +64,23 @@ BarWidget {
   readonly property bool liveSync: setting("liveSync", true) !== false
   readonly property string timeFormat: String(setting("timeFormat", "auto"))
   readonly property var hiddenCalendars: Cal.parseHiddenCalendars(setting("hiddenCalendars", []))
-  onHiddenCalendarsChanged: rebuildIndex()
+  // The binding fires once as the widget is created, before any week is
+  // cached. Later changes refilter what is already cached and refetch, so
+  // un-hiding a calendar can bring its events back.
+  property bool hiddenReady: false
+  property string hiddenKey: ""
+  onHiddenCalendarsChanged: {
+    var key = root.hiddenCalendars.join("\n")
+    if (!root.hiddenReady) {
+      root.hiddenReady = true
+      root.hiddenKey = key
+      return
+    }
+    if (key === root.hiddenKey) return
+    root.hiddenKey = key
+    root.refilterCachedWeeks()
+    root.refreshCalendar(true)
+  }
   // Whether a place writes half past four as 16:30 or 4:30pm is a regional
   // convention, so "auto" reads it off the locale.
   readonly property bool hour24: timeFormat === "24"
@@ -212,7 +228,9 @@ BarWidget {
           // turning a busy week blank because the network blinked.
           if (!cache[week]) cache[week] = { events: null, at: 0 }
         } else {
-          cache[week] = { events: parsed[week], at: Date.now() }
+          // Drop hidden calendars before the cache. The fetch still receives
+          // them, and they are not kept in memory afterwards.
+          cache[week] = { events: Cal.withoutHidden(parsed[week], root.hiddenCalendars), at: Date.now() }
         }
       }
     }
@@ -242,6 +260,20 @@ BarWidget {
       root.queuedWeeks = []
       requestWeeks(next, true)
     }
+  }
+
+  function refilterCachedWeeks() {
+    var cache = {}
+    for (var key in root.weekCache) {
+      var entry = root.weekCache[key]
+      if (!entry || entry.events === null || !Array.isArray(entry.events)) {
+        cache[key] = entry
+        continue
+      }
+      cache[key] = { events: Cal.withoutHidden(entry.events, root.hiddenCalendars), at: entry.at }
+    }
+    root.weekCache = cache
+    rebuildIndex()
   }
 
   function rebuildIndex() {
