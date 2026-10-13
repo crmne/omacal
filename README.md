@@ -29,7 +29,8 @@ plug in as backends (see [Backends](#backends)).
   HEY. For a repeating event, choose whether the change is for this day or
   every day of the series (this day needs hey-cli 1.6.0 or newer). Join
   and Open in HEY are at the top, for the meeting and for what the form
-  does not cover: notes, guests and repeats.
+  does not cover: notes, guests and repeats. Each shows the host it will
+  open.
 - **Quick add from anywhere.** **Alt+Shift+Space** opens the same form as a
   card in the middle of the screen, like OmaTasks' quick add. The shortcut
   is bound in Hyprland by the plugin, never over one that is already taken,
@@ -124,8 +125,10 @@ network requests of its own and stores no credentials. For HEY:
 `edit` and `delete`, `hey timetrack`, and a long-running `hey watch` for live
 sync. Every call is bounded by `timeout` and `head -c`, and takes its input
 as arguments, never as shell text. Event text is length-capped and drawn as
-plain text, and only `https` links are handed to `xdg-open`. Reminders are
-sent to the notification daemon over D-Bus by the system `python3` (with
+plain text, and only `https` links are handed to `xdg-open`. A link
+with a username in it is not opened, and a reminder names the host it
+would open. Reminders are sent to the notification daemon over D-Bus by
+the system `python3` (with
 PyGObject, part of Omarchy), which gets the event's title, calendar, place
 and link in its environment rather than its arguments, so other users on the
 machine cannot read them from the process list. `hyprctl` binds the

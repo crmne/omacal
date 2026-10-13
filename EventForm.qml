@@ -347,7 +347,8 @@ Item {
 
         Button {
           visible: !!root.editing && root.editing.joinUrl !== ""
-          text: root.editing && root.editing.joinTitle !== "" ? root.editing.joinTitle : "Join"
+          text: (root.editing && root.editing.joinTitle !== "" ? root.editing.joinTitle : "Join")
+            + (root.editing && Cal.urlHost(root.editing.joinUrl) !== "" ? " · " + Cal.urlHost(root.editing.joinUrl) : "")
           iconText: "󰍫"
           foreground: root.foreground
           accent: root.accent
@@ -358,6 +359,7 @@ Item {
         Button {
           visible: !!root.editing && root.editing.url !== ""
           text: "Open in " + root.serviceName
+            + (root.editing && Cal.urlHost(root.editing.url) !== "" ? " · " + Cal.urlHost(root.editing.url) : "")
           iconText: "󰏌"
           foreground: root.foreground
           accent: root.accent

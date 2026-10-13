@@ -210,7 +210,8 @@ Item {
 
       PanelToolTip {
         visible: joinMouse.containsMouse
-        text: root.event && root.event.joinTitle !== "" ? root.event.joinTitle : "Join the meeting"
+        text: (root.event && root.event.joinTitle !== "" ? root.event.joinTitle : "Join the meeting")
+          + (root.event && Cal.urlHost(root.event.joinUrl) !== "" ? " · " + Cal.urlHost(root.event.joinUrl) : "")
         fontFamily: root.fontFamily
       }
     }

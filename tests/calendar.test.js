@@ -132,6 +132,11 @@ test("week output: failures are null, not empty", function() {
 test("unsafe links are dropped", function() {
   assert.strictEqual(Hey.safeUrl("javascript:alert(1)"), "")
   assert.strictEqual(Hey.safeUrl("https://meet.example.com/x"), "https://meet.example.com/x")
+  assert.strictEqual(Hey.safeUrl("https://user:pass@meet.example.com/x"), "")
+  assert.strictEqual(Hey.safeUrl("https://meet.example.com/abc@def"), "https://meet.example.com/abc@def")
+  assert.strictEqual(Hey.urlHost("https://meet.example.com/abc"), "meet.example.com")
+  assert.strictEqual(Hey.urlHost("https://meet.example.com:443/abc"), "meet.example.com")
+  assert.strictEqual(Hey.urlHost("https://user:pass@meet.example.com/x"), "")
 })
 
 test("hidden calendars are matched by name, case-insensitively", function() {
@@ -313,6 +318,7 @@ test("a reminder keeps the event's details off the command line", function() {
   assert.strictEqual(cmd.environment.OMACAL_TITLE, "Doctor appointment")
   assert.ok(cmd.environment.OMACAL_BODY.indexOf("12 Secret Street") !== -1)
   assert.strictEqual(cmd.environment.OMACAL_LINK, "https://meet.example.com/abc-defg-hij")
+  assert.ok(cmd.environment.OMACAL_BODY.indexOf("meet.example.com") !== -1)
 })
 
 test("declined events never notify", function() {

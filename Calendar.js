@@ -48,10 +48,27 @@ function boundedString(value, limit) {
 }
 
 // Only ever handed to a browser launcher, so anything that is not plainly a
-// web URL is dropped rather than passed along.
+// web URL is dropped rather than passed along. A username in the URL
+// (https://user:pass@host) is dropped too: the host is what a person can
+// check, and userinfo is not a meeting link.
 function safeUrl(value) {
   var text = boundedString(value, 2048).replace(/^\s+|\s+$/g, "")
-  return /^https:\/\/[^\s"'<>\\]+$/.test(text) ? text : ""
+  if (!/^https:\/\/[^\s"'<>\\]+$/.test(text)) return ""
+  var rest = text.slice("https://".length)
+  var cut = rest.search(/[\/?#]/)
+  var authority = cut === -1 ? rest : rest.slice(0, cut)
+  if (authority === "" || authority.indexOf("@") !== -1) return ""
+  return text
+}
+
+// The host of a link that safeUrl accepts, without a port, or "".
+function urlHost(value) {
+  var text = safeUrl(value)
+  if (text === "") return ""
+  var rest = text.slice("https://".length)
+  var cut = rest.search(/[\/?#]/)
+  var authority = cut === -1 ? rest : rest.slice(0, cut)
+  return authority.replace(/:\d+$/, "")
 }
 
 function parseInstant(value) {
@@ -933,10 +950,12 @@ function reminderLead(event, nowMs) {
   return d === 1 ? "Tomorrow" : "In " + d + " days"
 }
 
-function notificationBody(event, nowMs, hour24) {
+function notificationBody(event, nowMs, hour24, link) {
   var lines = [reminderLead(event, nowMs) + " · " + eventRangeLabel(event, hour24)]
   if (event.calendar !== "") lines.push(event.calendar)
   if (event.location !== "") lines.push(event.location)
+  var host = urlHost(link)
+  if (host !== "") lines.push(host)
   return lines.join("\n")
 }
 
@@ -1030,7 +1049,7 @@ function notifyCommand(event, nowMs, hour24, fallbackLink, remindMs) {
     command: ["/usr/bin/python3", "-c", notifyScript],
     environment: {
       OMACAL_TITLE: String(event.title || ""),
-      OMACAL_BODY: notificationBody(event, nowMs, hour24),
+      OMACAL_BODY: notificationBody(event, nowMs, hour24, link),
       OMACAL_LINK: link || "",
       OMACAL_MARKER: reminderMarker(reminderKey(event, remindMs === undefined ? nowMs : remindMs)),
       OMACAL_ICON: "icon-" + color + "-" + day + ".svg",
@@ -1540,6 +1559,7 @@ if (typeof module !== "undefined") {
     isDayKey: isDayKey,
     boundedString: boundedString,
     safeUrl: safeUrl,
+    urlHost: urlHost,
     parseInstant: parseInstant,
     normalizeEvent: normalizeEvent,
     normalizeEvents: normalizeEvents,
