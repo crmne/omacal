@@ -61,7 +61,6 @@ BarWidget {
   readonly property int alertLeadMinutes: Cal.normalizedAlertLead(setting("alertLeadMinutes", 15))
   readonly property int refreshIntervalSec: Cal.normalizedRefreshInterval(setting("refreshIntervalSec", 300))
   readonly property bool notificationsEnabled: setting("notifications", true) !== false
-  readonly property bool liveSync: setting("liveSync", true) !== false
   readonly property string timeFormat: String(setting("timeFormat", "auto"))
   readonly property var hiddenCalendars: Cal.parseHiddenCalendars(setting("hiddenCalendars", []))
   onHiddenCalendarsChanged: rebuildIndex()
@@ -139,14 +138,23 @@ BarWidget {
     }
     if (root.backendMode === "") return
     requestWeeks(baseWeeks().concat(root.visibleWeeks), force === true)
-    if (!calendarsProcess.running) calendarsProcess.running = true
+    if (!calendarsProcess.running) {
+      calendarsProcess.command = Backend.calendarsCommand()
+      calendarsProcess.running = true
+    }
     refreshTimeTrack()
   }
 
   function refreshTimeTrack() {
     if (!root.capabilities.timeTracking) return
-    if (!timeTrackProcess.running) timeTrackProcess.running = true
-    if (!timeTracksProcess.running) timeTracksProcess.running = true
+    if (!timeTrackProcess.running) {
+      timeTrackProcess.command = Backend.currentTrackCommand()
+      timeTrackProcess.running = true
+    }
+    if (!timeTracksProcess.running) {
+      timeTracksProcess.command = Backend.tracksCommand()
+      timeTracksProcess.running = true
+    }
   }
 
   function applyTimeTracks(text) {
@@ -536,6 +544,7 @@ BarWidget {
     stdout: StdioCollector {
       onStreamFinished: {
         var probed = Backend.probe(text)
+        if (probed.path) Backend.rememberHey(probed.path)
         root.backendVersion = probed.version
         root.backendMode = probed.mode
         root.backendChecked = true
@@ -552,7 +561,7 @@ BarWidget {
   Process {
     id: calendarsProcess
     running: false
-    command: Backend.calendarsCommand
+    command: []
     stdout: StdioCollector {
       onStreamFinished: {
         var parsed = Cal.parseCalendars(text)
@@ -564,7 +573,7 @@ BarWidget {
   Process {
     id: timeTrackProcess
     running: false
-    command: Backend.currentTrackCommand
+    command: []
     stdout: StdioCollector {
       onStreamFinished: {
         var parsed = Cal.parseCurrentTrack(text)
@@ -576,7 +585,7 @@ BarWidget {
   Process {
     id: timeTracksProcess
     running: false
-    command: Backend.tracksCommand
+    command: []
     stdout: StdioCollector {
       onStreamFinished: root.applyTimeTracks(text)
     }
@@ -599,33 +608,41 @@ BarWidget {
     }
   }
 
-  // ---- Live sync, for backends that can stream their changes (HEY: `hey
-  //      watch`). Any change re-reads what is on screen, debounced so a burst of edits costs one fetch. The polling
-  //      timer above stays as the fallback for when the watch is down.
-  Timer {
-    id: changeDebounce
-    interval: 1500
-    onTriggered: root.refreshCalendar(true)
+  // Live sync runs once per shell, in Service.qml. This widget refreshes
+  // when that service's watchSerial moves. A bar that cannot see the service
+  // keeps the polling timer above. The lookup is imperative: a binding on
+  // serviceFor does not re-run when the service appears.
+  property var calendarService: null
+
+  function attachService() {
+    if (root.calendarService) return true
+    var facade = root.bar
+    var shell = facade && facade.shell ? facade.shell : null
+    if (!shell || typeof shell.serviceFor !== "function") return false
+    var service = shell.serviceFor(root.moduleName)
+    if (!service) return false
+    root.calendarService = service
+    return true
   }
 
-  Process {
-    id: watchProcess
-    running: root.liveSync && root.capabilities.watch && root.backendMode !== ""
-    command: Backend.watchCommand
-    stdout: SplitParser {
-      onRead: function(line) {
-        if (Backend.isWatchChange(line)) changeDebounce.restart()
-      }
+  Timer {
+    id: serviceLookup
+    interval: 400
+    repeat: true
+    running: true
+    triggeredOnStart: true
+    property int tries: 0
+    onTriggered: {
+      tries += 1
+      if (root.attachService() || tries >= 8) serviceLookup.stop()
     }
-    // A watch that dies (signed out, network gone, CLI upgraded under it)
-    // is restarted after a pause rather than in a tight loop.
-    onExited: if (root.liveSync && root.backendMode !== "") watchRestart.restart()
   }
 
-  Timer {
-    id: watchRestart
-    interval: 60000
-    onTriggered: if (root.liveSync && root.backendMode !== "" && !watchProcess.running) watchProcess.running = true
+  Connections {
+    target: root.calendarService
+    function onWatchSerialChanged() {
+      root.refreshCalendar(true)
+    }
   }
 
   Loader {

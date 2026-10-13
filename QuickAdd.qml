@@ -31,7 +31,10 @@ Item {
   function open(payload) {
     root.error = ""
     root.opened = true
-    if (!calendarsProcess.running) calendarsProcess.running = true
+    if (!calendarsProcess.running) {
+      calendarsProcess.command = Backend.calendarsCommand()
+      calendarsProcess.running = true
+    }
     if (root.backendMode === "" && !versionProcess.running) versionProcess.running = true
     Qt.callLater(function() { form.reset() })
   }
@@ -109,6 +112,7 @@ Item {
     stdout: StdioCollector {
       onStreamFinished: {
         var probed = Backend.probe(text)
+        if (probed.path) Backend.rememberHey(probed.path)
         root.backendMode = probed.mode
         if (root.backendMode === "") root.error = probed.error
       }
@@ -118,7 +122,7 @@ Item {
   Process {
     id: calendarsProcess
     running: false
-    command: Backend.calendarsCommand
+    command: []
     stdout: StdioCollector {
       onStreamFinished: {
         var parsed = Cal.parseCalendars(text)

@@ -58,7 +58,8 @@ test("older or missing CLIs are refused, unreadable versions assumed new", funct
 
 test("list mode pads the window a day each side and names the span", function() {
   var cmd = Backend.fetchCommand("list", ["2026-10-05", "2026-09-28"])
-  assert.deepStrictEqual(cmd.slice(-4), ["2026-09-28", "2026-10-11", "2026-09-27", "2026-10-12"])
+  assert.deepStrictEqual(cmd.slice(-5, -1), ["2026-09-28", "2026-10-11", "2026-09-27", "2026-10-12"])
+  assert.strictEqual(cmd[cmd.length - 1], "hey")
 })
 
 // ---- Days
@@ -271,8 +272,32 @@ test("the HEY backend probes its CLI and says why it cannot run", function() {
   assert.ok(Backend.probe("").error.indexOf("not installed") !== -1)
   assert.ok(Backend.probe("hey version 1.2.0").error.indexOf("too old") !== -1)
   assert.strictEqual(Backend.probe("hey version 1.3.0").version, "1.3.0")
+  assert.strictEqual(Backend.probe("hey version 1.3.0").path, "")
+  var probed = Backend.probe("/usr/bin/hey\nhey version 1.7.0\n")
+  assert.strictEqual(probed.path, "/usr/bin/hey")
+  assert.strictEqual(probed.version, "1.7.0")
+  assert.strictEqual(probed.mode, "week")
   assert.strictEqual(Backend.writeResult(0, '{"ok":true,"summary":"Created"}').ok, true)
   assert.strictEqual(Backend.writeResult(124, "").message, "HEY took too long to answer.")
+})
+
+test("watch lines keep only the change, the recording id, and the calendar id", function() {
+  var script = Backend.watchCommand()[2]
+  assert.ok(script.indexOf("recording_type") !== -1)
+  assert.ok(script.indexOf("recording_id") !== -1)
+  assert.ok(script.indexOf(".calendar.id") !== -1)
+  assert.strictEqual(script.indexOf(".content"), -1)
+  assert.strictEqual(script.indexOf(".recording"), -1)
+})
+
+test("week and list commands take the hey path as an argument", function() {
+  var week = Backend.weekCommand(["2026-09-28"])
+  assert.strictEqual(week[5], "hey")
+  assert.ok(week[2].indexOf("heybin=${2:-hey}") !== -1)
+  assert.ok(week[2].indexOf('"$heybin" event week') !== -1)
+  var list = Backend.listCommand(["2026-09-28"])
+  assert.strictEqual(list[list.length - 1], "hey")
+  assert.ok(list[2].indexOf("heybin=${6:-hey}") !== -1)
 })
 
 // ---- Reminders
@@ -557,6 +582,22 @@ test("a typed zone filter puts the likeliest city first", function() {
   assert.strictEqual(Hey.zoneLabel("America/New_York"), "America/New York")
   assert.strictEqual(Hey.zoneCity("America/Argentina/Buenos_Aires"), "Buenos Aires")
   assert.strictEqual(Hey.zoneCity("UTC"), "UTC")
+})
+
+test("an absolute hey path is remembered and a relative one is not", function() {
+  try {
+    assert.strictEqual(Backend.isHeyPath("/usr/bin/hey"), true)
+    assert.strictEqual(Backend.isHeyPath("hey"), false)
+    assert.strictEqual(Backend.isHeyPath("/tmp/hey\n--version"), false)
+    Backend.rememberHey("/usr/bin/hey")
+    assert.strictEqual(Backend.heyBin(), "/usr/bin/hey")
+    var args = Backend.createCommand({ title: "T", date: "2026-09-28", allDay: true })
+    assert.ok(args.indexOf("/usr/bin/hey") !== -1)
+    Backend.rememberHey("hey")
+    assert.strictEqual(Backend.heyBin(), "hey")
+  } finally {
+    Backend.rememberHey("")
+  }
 })
 
 test("repeating events are never deleted by series id", function() {

@@ -30,6 +30,24 @@ var cliKillGraceSeconds = 3
 var cliOutputByteLimit = 4 * 1024 * 1024
 var maximumWeeksPerFetch = 8
 
+// Absolute path of the hey binary the probe found. Empty until then, and
+// whenever that path was not absolute. Later commands use it, so a PATH
+// change after startup cannot swap the binary.
+var heyExecutable = ""
+
+function isHeyPath(value) {
+  if (typeof value !== "string" || value.charAt(0) !== "/") return false
+  return value.indexOf("\n") === -1 && value.indexOf("\0") === -1
+}
+
+function rememberHey(path) {
+  heyExecutable = isHeyPath(path) ? path : ""
+}
+
+function heyBin() {
+  return heyExecutable !== "" ? heyExecutable : "hey"
+}
+
 function isDayKey(value) {
   return /^\d{4}-\d{2}-\d{2}$/.test(String(value || ""))
 }
@@ -54,7 +72,22 @@ function shiftDay(key, delta) {
 var minimumCliVersion = [1, 3, 0]
 var weekViewCliVersion = [1, 4, 0]
 
-var probeCommand = ["bash", "-c", "timeout 5 hey --version 2>/dev/null | head -c 200", "omacal"]
+// Prints the absolute path on its own first line when `command -v` found
+// one, then the version text. A relative result is not trusted or run.
+var probeScript = [
+  "p=$(command -v hey 2>/dev/null || true)",
+  "case \"$p\" in",
+  "/*)",
+  "  printf '%s\\n' \"$p\"",
+  "  timeout 5 \"$p\" --version 2>/dev/null | head -c 200",
+  "  ;;",
+  "*)",
+  "  timeout 5 hey --version 2>/dev/null | head -c 200",
+  "  ;;",
+  "esac"
+].join("\n")
+
+var probeCommand = ["bash", "-c", probeScript, "omacal"]
 
 // "hey version 1.7.0" → [1, 7, 0], or null.
 function parseCliVersion(raw) {
@@ -72,21 +105,32 @@ function formatVersion(version) {
   return version ? version.join(".") : ""
 }
 
-// Reads the probe's answer: { mode, version, error }. The mode is "week"
-// (1.4.0 and newer), "list" (1.3.x), or "" when the CLI cannot be used, with
-// `error` saying why. A version that cannot be read (a development build,
-// say) is taken to be new: guessing old would hide what `hey event week`
-// knows.
+// Reads the probe's answer: { mode, version, error, path }. The mode is
+// "week" (1.4.0 and newer), "list" (1.3.x), or "" when the CLI cannot be
+// used, with `error` saying why. A version that cannot be read (a
+// development build, say) is taken to be new: guessing old would hide what
+// `hey event week` knows. When the first line is an absolute path, that is
+// `path` and the rest is the version text. Output with no path line is the
+// version text alone, which is what the tests pass in.
 function probe(output) {
   var text = String(output || "").replace(/^\s+|\s+$/g, "")
+  var path = ""
+  var split = text.indexOf("\n")
+  if (split !== -1) {
+    var first = text.slice(0, split).replace(/^\s+|\s+$/g, "")
+    if (isHeyPath(first)) {
+      path = first
+      text = text.slice(split + 1).replace(/^\s+|\s+$/g, "")
+    }
+  }
   if (text === "")
-    return { mode: "", version: "", error: "The HEY CLI is not installed. Install hey-cli and run `hey setup`." }
+    return { mode: "", version: "", path: path, error: "The HEY CLI is not installed. Install hey-cli and run `hey setup`." }
   var version = parseCliVersion(text)
-  if (version === null) return { mode: "week", version: "", error: "" }
+  if (version === null) return { mode: "week", version: "", error: "", path: path }
   if (compareVersions(version, minimumCliVersion) < 0)
-    return { mode: "", version: formatVersion(version),
+    return { mode: "", version: formatVersion(version), path: path,
       error: "hey-cli " + formatVersion(version) + " is too old. OmaCal needs " + formatVersion(minimumCliVersion) + " or newer." }
-  return { mode: compareVersions(version, weekViewCliVersion) < 0 ? "list" : "week", version: formatVersion(version), error: "" }
+  return { mode: compareVersions(version, weekViewCliVersion) < 0 ? "list" : "week", version: formatVersion(version), error: "", path: path }
 }
 
 // A note for the settings, about what this CLI can and cannot see.
@@ -140,10 +184,10 @@ var eventProjection = "map({"
 var weekScript = [
   "dir=$(mktemp -d) || exit 1",
   "trap 'rm -rf \"$dir\"' EXIT",
-  "filter=$1; shift",
+  "filter=$1; heybin=${2:-hey}; shift 2",
   "for d in \"$@\"; do",
   "  (timeout -k " + cliKillGraceSeconds + " " + cliTimeoutSeconds
-    + " hey event week \"$d\" --json --all > \"$dir/$d\" 2>/dev/null) &",
+    + " \"$heybin\" event week \"$d\" --json --all > \"$dir/$d\" 2>/dev/null) &",
   "done",
   "wait",
   "for d in \"$@\"; do",
@@ -161,12 +205,12 @@ function weekCommand(weekKeys) {
   var list = Array.isArray(weekKeys) ? weekKeys : []
   for (var i = 0; i < list.length && keys.length < maximumWeeksPerFetch; i++)
     if (isDayKey(list[i]) && keys.indexOf(list[i]) === -1) keys.push(list[i])
-  return ["bash", "-c", weekScript, "omacal", eventProjection].concat(keys)
+  return ["bash", "-c", weekScript, "omacal", eventProjection, heyBin()].concat(keys)
 }
 
 // 1.3.x: one `hey event list` over the whole span, as a single span line.
-var listScript = "timeout -k " + cliKillGraceSeconds + " " + cliTimeoutSeconds
-  + " hey event list --starts-on \"$4\" --ends-on \"$5\" --json --all 2>/dev/null"
+var listScript = "heybin=${6:-hey}; timeout -k " + cliKillGraceSeconds + " " + cliTimeoutSeconds
+  + " \"$heybin\" event list --starts-on \"$4\" --ends-on \"$5\" --json --all 2>/dev/null"
   + " | jq -c --arg a \"$2\" --arg b \"$3\" \"if .ok == true then {list: true, first: \\$a, last: \\$b, events: (.data | $1)}"
   + " else {list: true, first: \\$a, last: \\$b, error: true} end\" 2>/dev/null"
   + " | head -c " + (cliOutputByteLimit + 1)
@@ -183,7 +227,7 @@ function listCommand(weekKeys) {
   // last day east of Greenwich would fall off the end. A day either side is
   // asked for, and Calendar.js trims back to the span.
   return ["bash", "-c", listScript, "omacal", eventProjection, first, last,
-    shiftDay(first, -1), shiftDay(last, 1)]
+    shiftDay(first, -1), shiftDay(last, 1), heyBin()]
 }
 
 // The weeks named by their Mondays, read the way the probe said to.
@@ -193,18 +237,29 @@ function fetchCommand(mode, weekKeys) {
 
 // Named calendars only. The unnamed personal calendar holds todos, habits
 // and the journal rather than events, and HEY's own form never offers it.
-var calendarsCommand = ["bash", "-c",
-  "timeout -k 3 20 hey calendar list --json 2>/dev/null"
-  + " | jq -c '[.data[] | select(.name != null and .name != \"\")"
-  + " | {id, name, color: (.color // \"\"), kind: (.kind // \"\"), owned: (.owned // false)}]'"
-  + " | head -c 262144",
-  "omacal"]
+function calendarsCommand() {
+  return ["bash", "-c",
+    "heybin=${1:-hey}; timeout -k 3 20 \"$heybin\" calendar list --json 2>/dev/null"
+    + " | jq -c '[.data[] | select(.name != null and .name != \"\")"
+    + " | {id, name, color: (.color // \"\"), kind: (.kind // \"\"), owned: (.owned // false)}]'"
+    + " | head -c 262144",
+    "omacal", heyBin()]
+}
 
-// Calendar changes as HEY makes them, one JSON line each; any line but the
-// watch's own "ready" and "disconnected" means something changed. Mail is
-// left out: naming only calendar changes switches the mail side off.
-var watchCommand = ["hey", "watch", "--events",
-  "recording_added,recording_updated,recording_deleted,calendar_added,calendar_updated,calendar_deleted,calendar_resync"]
+// Calendar changes as HEY makes them. Mail is left out: naming only calendar
+// changes switches the mail side off. The line that reaches the shell is the
+// change type, the recording id, and the calendar id. The recording itself
+// (notes, guests, journal text) is dropped here, and a line jq cannot read
+// is dropped with it rather than passed through.
+var watchScript = [
+  "heybin=${1:-hey}",
+  "\"$heybin\" watch --events recording_added,recording_updated,recording_deleted,calendar_added,calendar_updated,calendar_deleted,calendar_resync \\",
+  "  | jq -c --unbuffered -R 'fromjson? | select(type == \"object\") | {change, recording_type, recording_id, calendar: (if .calendar then {id: .calendar.id} else null end)}'"
+].join("\n")
+
+function watchCommand() {
+  return ["bash", "-c", watchScript, "omacal", heyBin()]
+}
 
 function isWatchChange(line) {
   var text = String(line || "")
@@ -220,7 +275,7 @@ function isWatchChange(line) {
 // line, so a title can hold any character it likes.
 function createCommand(request) {
   var r = request || {}
-  var args = ["timeout", "-k", "3", "30", "hey", "event", "add", "--title", r.title, "--starts-on", r.date]
+  var args = ["timeout", "-k", "3", "30", heyBin(), "event", "add", "--title", r.title, "--starts-on", r.date]
   var across = false
   if (r.allDay) {
     args.push("--all-day")
@@ -292,7 +347,7 @@ function editCommand(request) {
   }
   if (target.length === 0 || target[0] === "") return []
 
-  var args = ["timeout", "-k", "3", "40", "hey", "event", "edit"].concat(target)
+  var args = ["timeout", "-k", "3", "40", heyBin(), "event", "edit"].concat(target)
   if (changes.title !== undefined) args.push("--title", changes.title)
   if (changes.location !== undefined) args.push("--location", changes.location)
   if (changes.calendarId) args.push("--calendar", String(Math.round(Number(changes.calendarId))))
@@ -323,7 +378,7 @@ function deleteCommand(event) {
   if (!event || event.recurring) return []
   var id = String(event.seriesId || "")
   if (!/^\d+$/.test(id)) return []
-  return ["timeout", "-k", "3", "20", "hey", "event", "delete", id, "--json"]
+  return ["timeout", "-k", "3", "20", heyBin(), "event", "delete", id, "--json"]
 }
 
 // Every write answers with HEY's JSON envelope: { ok, summary | error }.
@@ -348,31 +403,35 @@ function writeResult(exitCode, stdout) {
 // The track under way, in the standard shape:
 // { ok: true, track: { id, name, starts_at } | null }, or { ok: false }.
 // HEY names a track by its category, and calls one without "Time Track".
-var currentTrackCommand = ["bash", "-c",
-  "timeout -k 3 20 hey timetrack current --json 2>/dev/null"
+function currentTrackCommand() {
+  return ["bash", "-c",
+  "heybin=${1:-hey}; timeout -k 3 20 \"$heybin\" timetrack current --json 2>/dev/null"
   + " | jq -c 'if .ok == true then {ok: true, track: (if .data then {id: .data.id,"
   + " name: ((.data.category // \"\") | if . == \"\" then null else . end) // .data.title // \"\","
   + " starts_at: .data.starts_at} else null end)} else {ok: false} end'"
   + " | head -c 65536",
-  "omacal"]
+  "omacal", heyBin()]
+}
 
 // Finished tracks, newest first, in the standard shape. `hey timetrack
 // list` has no date window, so the newest few hundred are read; that covers
 // the weeks anyone browses.
-var tracksCommand = ["bash", "-c",
-  "timeout -k 3 20 hey timetrack list --json --limit 300 2>/dev/null"
+function tracksCommand() {
+  return ["bash", "-c",
+  "heybin=${1:-hey}; timeout -k 3 20 \"$heybin\" timetrack list --json --limit 300 2>/dev/null"
   + " | jq -c '[.data[] | {id, name: ((.category // \"\") | if . == \"\" then null else . end) // .title // \"\","
   + " named: ((.category // \"\") != \"\"), notes: (.notes // \"\"),"
   + " starts_at: (.starts_at // \"\"), ends_at: (.ends_at // \"\")}]'"
   + " | head -c 1048576",
-  "omacal"]
+  "omacal", heyBin()]
+}
 
 function trackStartCommand() {
-  return ["timeout", "-k", "3", "20", "hey", "timetrack", "start", "--json"]
+  return ["timeout", "-k", "3", "20", heyBin(), "timetrack", "start", "--json"]
 }
 
 function trackStopCommand() {
-  return ["timeout", "-k", "3", "20", "hey", "timetrack", "stop", "--json"]
+  return ["timeout", "-k", "3", "20", heyBin(), "timetrack", "stop", "--json"]
 }
 
 // HEY names a track by its category: editing one "files the track under a
@@ -381,13 +440,13 @@ function trackRenameCommand(id, name) {
   var trackId = String(id || "")
   var title = String(name || "").replace(/^\s+|\s+$/g, "")
   if (!/^\d+$/.test(trackId) || title === "") return []
-  return ["timeout", "-k", "3", "20", "hey", "timetrack", "edit", trackId, "--category", title.substr(0, 128), "--json"]
+  return ["timeout", "-k", "3", "20", heyBin(), "timetrack", "edit", trackId, "--category", title.substr(0, 128), "--json"]
 }
 
 function trackDeleteCommand(id) {
   var trackId = String(id || "")
   if (!/^\d+$/.test(trackId)) return []
-  return ["timeout", "-k", "3", "20", "hey", "timetrack", "delete", trackId, "--json"]
+  return ["timeout", "-k", "3", "20", heyBin(), "timetrack", "delete", trackId, "--json"]
 }
 
 // ---------------------------------------------------------------------------
@@ -405,6 +464,9 @@ if (typeof module !== "undefined") {
     probeCommand: probeCommand,
     parseCliVersion: parseCliVersion,
     probe: probe,
+    isHeyPath: isHeyPath,
+    rememberHey: rememberHey,
+    heyBin: heyBin,
     modeNote: modeNote,
     eventProjection: eventProjection,
     fetchCommand: fetchCommand,

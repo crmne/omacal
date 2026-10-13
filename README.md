@@ -45,8 +45,11 @@ plug in as backends (see [Backends](#backends)).
   total. Stopping one opens its name field right away; any track can be
   renamed by clicking it (HEY names a track by its category, created if
   new) or deleted from its hover button.
-- **Live sync.** HEY's `hey watch` stream refreshes the panel within seconds of
-  a change made anywhere else, with polling as the fallback.
+- **Live sync.** One `hey watch` per shell refreshes the panel within seconds
+  of a change made anywhere else, with polling as the fallback. Each line
+  that reaches the shell is the change type, the recording id, and the
+  calendar id. The hey binary is the absolute path found at startup. A
+  custom bar that cannot see the plugin service keeps polling only.
 - **In the bar**, like a macOS menu-bar calendar: an event's name and when
   sit in front of the stock clock (`󰃭 Team standup · in 12m`, then
   `· until 14:30`) from its **earliest reminder** until it ends. A day
@@ -182,7 +185,7 @@ at once, so it can be edited there too.
 | `quickAddShortcut` | `ALT + SHIFT + SPACE` | Opens the quick-add card. Empty turns it off. |
 | `alertLeadMinutes` | `15` | How early the bar names an event that has no reminders, and what counts as "about to start". |
 | `timeFormat` | `auto` | `auto`, `12` or `24`. |
-| `liveSync` | `true` | Keep a `hey watch` running for instant updates. |
+| `liveSync` | `true` | Keep one `hey watch` per shell for instant updates. A custom bar that cannot see the plugin service polls instead. |
 | `refreshIntervalSec` | `300` | Polling fallback, 30 to 3600. |
 | `hiddenCalendars` | `""` | Comma-separated calendar names to leave out. |
 
