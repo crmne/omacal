@@ -582,16 +582,17 @@ Panel {
                   font.letterSpacing: 1
                 }
 
-                TextField {
+                KeyField {
                   id: bornField
                   width: Style.space(70)
                   anchors.verticalCenter: parent.verticalCenter
                   placeholderText: "year"
                   foreground: root.contentForeground
                   font.family: root.contentFontFamily
-                  inputMethodHints: Qt.ImhDigitsOnly
+                  allowed: /[0-9]/
+                  maximumLength: 4
 
-                  Keys.onPressed: function(event) { root.handleLifeKey(event, expectancyField) }
+                  keyHandler: function(event) { root.handleLifeKey(event, expectancyField) }
                 }
 
                 Text {
@@ -605,16 +606,17 @@ Panel {
                   font.letterSpacing: 1
                 }
 
-                TextField {
+                KeyField {
                   id: expectancyField
                   width: Style.space(60)
                   anchors.verticalCenter: parent.verticalCenter
                   placeholderText: "90"
                   foreground: root.contentForeground
                   font.family: root.contentFontFamily
-                  inputMethodHints: Qt.ImhDigitsOnly
+                  allowed: /[0-9]/
+                  maximumLength: 4
 
-                  Keys.onPressed: function(event) { root.handleLifeKey(event, bornField) }
+                  keyHandler: function(event) { root.handleLifeKey(event, bornField) }
                 }
               }
 

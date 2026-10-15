@@ -294,7 +294,7 @@ FocusScope {
     Row {
       spacing: Style.space(8)
 
-      TextField {
+      KeyField {
         id: placeKeyField
         width: Style.space(220)
         password: true
@@ -302,7 +302,7 @@ FocusScope {
         foreground: root.foreground
         font.family: root.fontFamily
         onAccepted: if (text !== "") root.saveKey(text)
-        Keys.onEscapePressed: root.closed()
+        keyHandler: function(event) { if (event.key === Qt.Key_Escape) { root.closed(); event.accepted = true } }
       }
 
       Button {
@@ -433,7 +433,7 @@ FocusScope {
     Row {
       spacing: Style.space(8)
 
-      TextField {
+      KeyField {
         id: shortcutField
         width: Style.space(220)
         text: String(root.value("quickAddShortcut", "ALT + SHIFT + SPACE"))
@@ -441,7 +441,7 @@ FocusScope {
         foreground: root.foreground
         font.family: root.fontFamily
         onAccepted: root.save("quickAddShortcut", text.replace(/^\s+|\s+$/g, "").toUpperCase())
-        Keys.onEscapePressed: root.closed()
+        keyHandler: function(event) { if (event.key === Qt.Key_Escape) { root.closed(); event.accepted = true } }
       }
 
       Button {

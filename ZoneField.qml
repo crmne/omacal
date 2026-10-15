@@ -8,7 +8,7 @@ import "Calendar.js" as Cal
 // "tokyo"). Up and Down step through the matches, which the form lists
 // under the times while this has the keyboard. Empty means `fallback`:
 // this machine's zone for the start, the start's for the end.
-TextField {
+KeyField {
   id: root
 
   property var zones: []
@@ -16,10 +16,6 @@ TextField {
   // The zone settled on when the field was last left, shown as its city.
   property string picked: ""
   property int cursor: 0
-
-  // Called with (event, field) for every key this does not use itself, so
-  // Tab, Enter and the form's Alt shortcuts still work.
-  property var keyHandler: null
 
   readonly property string query: text.replace(/^\s+|\s+$/g, "")
   readonly property bool showsPicked: root.picked !== "" && root.query === Cal.zoneCity(root.picked)
@@ -43,14 +39,14 @@ TextField {
   placeholderText: root.fallback !== "" ? Cal.zoneCity(root.fallback) : "City"
   onQueryChanged: root.cursor = 0
 
-  Keys.onPressed: function(event) {
+  // Up and Down pick among the matches; every other key goes on to the
+  // form's keyHandler (Tab, Enter, its Alt shortcuts), then to the editing.
+  preKey: function(event) {
     var mods = event.modifiers & (Qt.AltModifier | Qt.ShiftModifier | Qt.ControlModifier)
     if (mods === 0 && (event.key === Qt.Key_Up || event.key === Qt.Key_Down)) {
       if (root.matches.length > 0)
         root.cursor = (root.cursor + (event.key === Qt.Key_Up ? -1 : 1) + root.matches.length) % root.matches.length
       event.accepted = true
-    } else if (root.keyHandler) {
-      root.keyHandler(event, root)
     }
   }
 

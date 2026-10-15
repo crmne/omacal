@@ -96,7 +96,7 @@ Item {
         elide: Text.ElideRight
       }
 
-      TextField {
+      KeyField {
         id: nameField
         visible: root.renaming
         anchors.left: parent.left
@@ -106,7 +106,7 @@ Item {
         foreground: root.foreground
         font.family: root.fontFamily
         verticalPadding: Style.space(3)
-        Keys.onPressed: function(event) {
+        keyHandler: function(event) {
           if (event.key === Qt.Key_Escape) {
             root.renameCanceled()
             event.accepted = true

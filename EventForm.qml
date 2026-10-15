@@ -460,13 +460,13 @@ Item {
       }
     }
 
-    TextField {
+    KeyField {
       id: titleField
       width: parent.width
       placeholderText: "What's happening?"
       foreground: root.foreground
       font.family: root.fontFamily
-      Keys.onPressed: function(event) { root.handleKey(event, titleField) }
+      keyHandler: root.handleKey
     }
 
     // The first day and, for an event over several, the last, with what
@@ -487,14 +487,14 @@ Item {
         font.letterSpacing: 1
       }
 
-      TextField {
+      KeyField {
         id: dateField
         width: Style.space(130)
         anchors.verticalCenter: parent.verticalCenter
         placeholderText: "today"
         foreground: root.foreground
         font.family: root.fontFamily
-        Keys.onPressed: function(event) { root.handleKey(event, dateField) }
+        keyHandler: root.handleKey
       }
 
       Text {
@@ -507,14 +507,14 @@ Item {
         font.letterSpacing: 1
       }
 
-      TextField {
+      KeyField {
         id: untilField
         width: Style.space(130)
         anchors.verticalCenter: parent.verticalCenter
         placeholderText: "same day"
         foreground: root.foreground
         font.family: root.fontFamily
-        Keys.onPressed: function(event) { root.handleKey(event, untilField) }
+        keyHandler: root.handleKey
       }
     }
 
@@ -630,13 +630,13 @@ Item {
         visible: !root.allDay
         spacing: Style.space(6)
 
-        TextField {
+        KeyField {
           id: startField
           width: Style.space(96)
           placeholderText: "09:00"
           foreground: root.foreground
           font.family: root.fontFamily
-          Keys.onPressed: function(event) { root.handleKey(event, startField) }
+          keyHandler: root.handleKey
         }
 
         ZoneField {
@@ -665,13 +665,13 @@ Item {
         visible: !root.allDay
         spacing: Style.space(6)
 
-        TextField {
+        KeyField {
           id: endField
           width: Style.space(96)
           placeholderText: "+1 h"
           foreground: root.foreground
           font.family: root.fontFamily
-          Keys.onPressed: function(event) { root.handleKey(event, endField) }
+          keyHandler: root.handleKey
         }
 
         // Follows the start's zone until it is given its own.
@@ -751,13 +751,13 @@ Item {
       }
     }
 
-    TextField {
+    KeyField {
       id: locationField
       width: parent.width
       placeholderText: "Where? (optional)"
       foreground: root.foreground
       font.family: root.fontFamily
-      Keys.onPressed: function(event) { root.handleKey(event, locationField) }
+      keyHandler: root.handleKey
     }
 
     PlaceSearch {

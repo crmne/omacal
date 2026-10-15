@@ -3,6 +3,7 @@ var assert = require("assert")
 var Hey = require("../Calendar.js")
 var Backend = require("../backends/Hey.js")
 var Places = require("../Places.js")
+var Edit = require("../KeyEdit.js")
 
 var tz = process.env.TZ || "local"
 var failures = 0
@@ -544,6 +545,47 @@ test("a refused Google key says so", function() {
 test("the Google key lives in its own file under the config directory", function() {
   assert.strictEqual(Places.keyPath("", "/home/x"), "/home/x/.config/omacal/google-places-key")
   assert.strictEqual(Places.keyPath("/cfg", "/home/x"), "/cfg/omacal/google-places-key")
+})
+
+// ---- Text fields (KeyField.qml, which never reads the clipboard by itself)
+
+test("typing goes in at the caret, and replaces everything while it is all selected", function() {
+  var s = Edit.state("Lunch Maya", 5)
+  s = Edit.insert(s, " with")
+  assert.deepStrictEqual(s, { text: "Lunch with Maya", cursor: 10, all: false })
+  s = Edit.insert(Edit.selectAll(s), "Dinner")
+  assert.deepStrictEqual(s, { text: "Dinner", cursor: 6, all: false })
+})
+
+test("pasted text becomes one clean line, within the field's limit", function() {
+  assert.strictEqual(Edit.clean("a\tb\r\nc\u0007d\u007f"), "a b  cd")
+  assert.strictEqual(Edit.insert(Edit.state("", 0), "x".repeat(5000)).text.length, Edit.maximumLength)
+  assert.strictEqual(Edit.insert(Edit.state("19", 2), "8a4", /[0-9]/, 4).text, "1984")
+  assert.strictEqual(Edit.insert(Edit.state("1984", 4), "5", /[0-9]/, 4).text, "1984")
+})
+
+test("deleting and moving work by character and by word", function() {
+  var s = Edit.state("Team standup today", 12)
+  assert.strictEqual(Edit.backspace(s).text, "Team standu today")
+  assert.strictEqual(Edit.del(s).text, "Team standuptoday")
+  assert.deepStrictEqual(Edit.deleteWord(s), { text: "Team  today", cursor: 5, all: false })
+  assert.deepStrictEqual(Edit.deleteWord(Edit.state("Team standup today", 13)), { text: "Team today", cursor: 5, all: false })
+  assert.strictEqual(Edit.left(s, true).cursor, 5)
+  assert.strictEqual(Edit.right(Edit.state("Team standup today", 4), true).cursor, 12)
+  assert.strictEqual(Edit.backspace(Edit.state("abc", 0)).text, "abc")
+  assert.strictEqual(Edit.left(Edit.selectAll(s)).cursor, 0)
+  assert.strictEqual(Edit.right(Edit.selectAll(s)).cursor, 18)
+  assert.strictEqual(Edit.backspace(Edit.selectAll(s)).text, "")
+})
+
+test("no field in OmaCal is a Qt text input", function() {
+  var fs = require("fs")
+  var path = require("path")
+  var dir = path.join(__dirname, "..")
+  fs.readdirSync(dir).filter(function(f) { return /\.qml$/.test(f) && f !== "KeyField.qml" }).forEach(function(f) {
+    var source = fs.readFileSync(path.join(dir, f), "utf8").replace(/\/\/.*$/gm, "")
+    assert.ok(!/\b(TextField|TextInput|TextEdit|TextArea)\s*\{/.test(source), f + " has a Qt text input")
+  })
 })
 
 // ---- Editing

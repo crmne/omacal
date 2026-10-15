@@ -164,6 +164,7 @@ where the focus is.
 | `Alt+↑` `Alt+↓` | Switch reminder, from any field |
 | `Alt+A` | Toggle all day, from any field |
 | `Alt+Z` | Show the time zones under the times, or hide them and go back to local time |
+| `Ctrl+V` / `Shift+Insert` | Paste. OmaCal's text fields read the clipboard only then, never on their own |
 | `↑` `↓` in Where? | Pick one of the suggested places |
 | `Enter` | Take the picked place; otherwise add the event, or save the changes |
 | `Esc` | Put the place suggestions away; otherwise cancel |
