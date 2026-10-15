@@ -949,12 +949,16 @@ function notificationBody(event, nowMs, hour24) {
 // only this user can read, and the notification is sent over D-Bus from
 // Python instead of through notify-send, which only takes it as arguments.
 // The system Python, because it has PyGObject on Omarchy and a mise or
-// virtualenv one first on PATH may not.
+// virtualenv one first on PATH may not. The body is escaped before it goes
+// into that environment, because Omarchy draws the notification body as
+// markup. The title is left as written. Omarchy draws the summary as plain
+// text, and escaping it would show the entities instead of the characters.
 //
 // Every monitor's bar runs its own widget, and each would send the same
 // reminder. The first to create the reminder's marker directory claims it
 // (mkdir either creates or fails, atomically); the rest stay quiet. Markers
-// live in the runtime directory and are swept after two days.
+// live under XDG_RUNTIME_DIR, mode 0700, and are swept after two days. There
+// is no /tmp fallback: without the runtime directory the reminder is skipped.
 //
 // The icon is a small calendar page in the event's calendar colour with its
 // day on it, written once per colour and day next to the markers.
@@ -962,28 +966,59 @@ var notifyScript = [
   "import os, shutil, sys, time",
   "from gi.repository import Gio, GLib",
   "env = {k: os.environ.pop('OMACAL_' + k, '') for k in ('TITLE', 'BODY', 'LINK', 'MARKER', 'ICON', 'SVG')}",
-  "base = os.path.join(os.environ.get('XDG_RUNTIME_DIR') or '/tmp', 'omacal')",
+  "runtime = os.environ.get('XDG_RUNTIME_DIR') or ''",
+  "if not runtime.startswith('/') or '\\0' in runtime:",
+  "    sys.exit(0)",
+  "base = os.path.join(runtime, 'omacal')",
   "shown = os.path.join(base, 'shown')",
+  "marker = env['MARKER']",
+  "icon_name = env['ICON']",
+  "if os.path.islink(base) or os.path.islink(shown):",
+  "    sys.exit(0)",
+  "if marker != os.path.basename(marker) or marker in ('', '.', '..'):",
+  "    sys.exit(0)",
+  "if icon_name != os.path.basename(icon_name) or not icon_name.endswith('.svg'):",
+  "    sys.exit(0)",
   "try:",
-  "    os.makedirs(shown, exist_ok=True)",
+  "    os.makedirs(shown, mode=0o700, exist_ok=True)",
+  "    os.chmod(base, 0o700)",
+  "    os.chmod(shown, 0o700)",
+  "    if os.path.islink(base) or os.path.islink(shown):",
+  "        sys.exit(0)",
   "    for name in os.listdir(shown):",
   "        path = os.path.join(shown, name)",
+  "        if os.path.islink(path):",
+  "            continue",
   "        if os.path.getmtime(path) < time.time() - 2 * 86400:",
   "            shutil.rmtree(path, ignore_errors=True)",
-  "    os.mkdir(os.path.join(shown, env['MARKER']))",
+  "    os.mkdir(os.path.join(shown, marker))",
   "except OSError:",
   "    sys.exit(0)",
-  "icon = os.path.join(base, env['ICON'])",
-  "if not os.path.isfile(icon) or os.path.getsize(icon) == 0:",
-  "    with open(icon, 'w') as f:",
-  "        f.write(env['SVG'])",
+  "icon = os.path.join(base, icon_name)",
+  "if os.path.islink(icon):",
+  "    sys.exit(0)",
+  "try:",
+  "    if not os.path.isfile(icon) or os.path.getsize(icon) == 0:",
+  "        flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC",
+  "        if hasattr(os, 'O_NOFOLLOW'):",
+  "            flags |= os.O_NOFOLLOW",
+  "        fd = os.open(icon, flags, 0o600)",
+  "        with os.fdopen(fd, 'w') as handle:",
+  "            handle.write(env['SVG'])",
+  "    os.chmod(icon, 0o600)",
+  "except OSError:",
+  "    sys.exit(0)",
   "loop = GLib.MainLoop()",
   "sent = [None]",
   "def answered(bus, sender, path, iface, signal, params, data):",
-  "    if params[0] != sent[0]: return",
-  "    if signal == 'ActionInvoked' and params[1] == 'default' and env['LINK']:",
+  "    if sent[0] is None or len(params) < 1 or params[0] != sent[0]:",
+  "        return",
+  "    if signal == 'NotificationClosed':",
+  "        loop.quit()",
+  "        return",
+  "    if signal == 'ActionInvoked' and len(params) > 1 and params[1] == 'default' and env['LINK']:",
   "        Gio.AppInfo.launch_default_for_uri(env['LINK'], None)",
-  "    loop.quit()",
+  "        loop.quit()",
   "try:",
   "    bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)",
   "    bus.signal_subscribe('org.freedesktop.Notifications', 'org.freedesktop.Notifications', None,",
@@ -992,11 +1027,24 @@ var notifyScript = [
   "        'org.freedesktop.Notifications', 'Notify',",
   "        GLib.Variant('(susssasa{sv}i)', ('OmaCal', 0, icon, env['TITLE'], env['BODY'], ['default', 'Open'], {}, -1)),",
   "        GLib.VariantType('(u)'), Gio.DBusCallFlags.NONE, -1, None).unpack()[0]",
+  "    env['TITLE'] = ''",
+  "    env['BODY'] = ''",
+  "    env['SVG'] = ''",
   "except GLib.Error:",
   "    sys.exit(0)",
   "GLib.timeout_add_seconds(86400, loop.quit)",
   "loop.run()"
 ].join("\n")
+
+// Notification bodies are markup. Escape the characters that would become
+// tags. Newlines stay, so the desktop can still break the lines.
+function escapeMarkup(value) {
+  return String(value === undefined || value === null ? "" : value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+}
 
 // A calendar page: the calendar's colour, a darker band with two rings,
 // and the day of the month in the calendar ink.
@@ -1030,7 +1078,7 @@ function notifyCommand(event, nowMs, hour24, fallbackLink, remindMs) {
     command: ["/usr/bin/python3", "-c", notifyScript],
     environment: {
       OMACAL_TITLE: String(event.title || ""),
-      OMACAL_BODY: notificationBody(event, nowMs, hour24),
+      OMACAL_BODY: escapeMarkup(notificationBody(event, nowMs, hour24)),
       OMACAL_LINK: link || "",
       OMACAL_MARKER: reminderMarker(reminderKey(event, remindMs === undefined ? nowMs : remindMs)),
       OMACAL_ICON: "icon-" + color + "-" + day + ".svg",

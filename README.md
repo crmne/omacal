@@ -45,8 +45,10 @@ plug in as backends (see [Backends](#backends)).
   Repeating events are left to HEY, since deleting by id takes the series.
 - **Notifications.** The reminders you set in HEY arrive as desktop
   notifications, once each however many monitors you have, with a small
-  calendar page in the event's calendar colour as the icon. Clicking one
-  opens the meeting link or the event.
+  calendar page in the event's calendar colour as the icon. A title is
+  shown as text, so markup in it is not interpreted. Clicking one opens
+  the meeting link or the event. Reminders are skipped when
+  `XDG_RUNTIME_DIR` is unset.
 - **Time tracking** (HEY). Start and stop HEY's time tracker from today's view.
   Finished tracks show on their day under **Tracked**, with the day's
   total. Stopping one opens its name field right away; any track can be
