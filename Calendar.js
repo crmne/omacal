@@ -1283,7 +1283,8 @@ function zoneCity(name) {
 // another is picked). The end is in timeZone too, with its date worked out,
 // unless endTimeZone names another: then the end's clock is in that zone,
 // and it is the backend's to place it (the end date is the first on which
-// it falls after the start). Returns { error } or { request }.
+// it falls after the start, or the until day when the form gives one).
+// Returns { error } or { request }.
 function validateEvent(form) {
   var f = form || {}
   var title = String(f.title || "").replace(/^\s+|\s+$/g, "")
@@ -1295,8 +1296,8 @@ function validateEvent(form) {
     endDate: f.date, timeZone: "", endTimeZone: "", calendarId: Number(f.calendarId) > 0 ? Math.round(Number(f.calendarId)) : 0,
     location: String(f.location || "").replace(/^\s+|\s+$/g, "").substr(0, 256), remind: "" }
 
-  // How many days after the start the end falls, when the form is editing
-  // an event that runs over several (the form has no end day of its own).
+  // How many days after the start the end falls: the form's "until" day.
+  // A timed event's end time is on that day, so it has to have one.
   var spanDays = Math.max(0, Math.min(366, Math.round(Number(f.spanDays) || 0)))
 
   if (request.allDay) {
@@ -1314,6 +1315,7 @@ function validateEvent(form) {
     if (start === "") return { error: "The start time is not a time." }
     request.startTime = start
     var endText = String(f.endTime || "").replace(/\s+/g, "")
+    if (endText === "" && spanDays > 0) return { error: "Give it an end time on its last day." }
     if (endText !== "") {
       var end = parseClock(endText)
       if (end === "") return { error: "The end time is not a time." }
@@ -1323,6 +1325,7 @@ function validateEvent(form) {
         // Clocks in two zones do not compare; the backend works out the day.
         if (!isZoneName(endZone)) return { error: "“" + endZone + "” is not a time zone I know." }
         request.endTimeZone = endZone
+        if (spanDays > 0) request.endDate = addDays(f.date, spanDays)
       } else if (spanDays > 0) {
         request.endDate = addDays(f.date, spanDays)
       } else {

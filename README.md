@@ -17,8 +17,11 @@ plug in as backends (see [Backends](#backends)).
 - **New events.** `+`, `N`, or double-clicking a day opens a quick form:
   title, day, calendar, all-day or a time range, place, reminder. Days and
   times are typed loosely: `fri`, `tomorrow`, `next mon`, `3 oct` for the
-  day, `9`, `930`, `9:30pm`, `21.30` for times. An end before the start
-  means the next morning. Times are this machine's local time. As in HEY's
+  day, `9`, `930`, `9:30pm`, `21.30` for times. An event over several
+  days gives its last one under **until**, read from the start (`sun` is
+  the first Sunday from it, `+2` two days after it); its end time is on
+  that day, and moving the start moves it along. Without one, an end before
+  the start means the next morning. Times are this machine's local time. As in HEY's
   own form, the globe next to the times (or `Alt+Z`) shows a zone under
   each of them, as a city you can type over (`new york`, `tokyo`); the
   end's follows the start's unless you give it its own, for a flight from

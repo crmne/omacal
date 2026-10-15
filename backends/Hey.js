@@ -240,22 +240,24 @@ function createCommand(request) {
   if (r.remind) args.push("--remind", r.remind)
   args.push("--json")
   if (!across) return args
-  return ["sh", "-c", acrossZonesScript, "sh", r.timeZone, r.date, r.startTime, r.endTimeZone, r.endTime].concat(args)
+  return ["sh", "-c", acrossZonesScript, "sh", r.timeZone, r.date, r.startTime, r.endTimeZone, r.endTime,
+    r.endDate || r.date].concat(args)
 }
 
 // HEY keeps a zone for each end of an event, but `hey event add` takes one
 // --time-zone for both. An end on another clock (a flight from Berlin at
 // 10:00 to New York at 13:00) is moved onto the start's with GNU date: the
-// same instant, as the start's zone reads it, on the first day it falls
-// after the start. HEY then shows that end on the start's clock.
-// Arguments: start zone, start day, start time, end zone, end time, then
-// the hey command. Answers in HEY's JSON envelope when it cannot.
+// same instant, as the start's zone reads it. The end's day is the one the
+// form gave, or else the first on which it falls after the start. HEY then
+// shows that end on the start's clock.
+// Arguments: start zone, start day, start time, end zone, end time, end
+// day, then the hey command. Answers in HEY's JSON envelope when it cannot.
 var acrossZonesScript =
-  "tz=$1 day=$2 start=$3 ez=$4 et=$5; shift 5; " +
+  "tz=$1 day=$2 start=$3 ez=$4 et=$5 eday=$6; shift 6; " +
   "fail() { printf '{\"ok\":false,\"error\":\"%s\"}\\n' \"$1\"; exit 1; }; " +
   "s=$(TZ=$tz date -d \"$day $start\" +%s) || fail 'Could not read the start time.'; " +
-  "e=$(TZ=$ez date -d \"$day $et\" +%s) || fail 'Could not read the end time.'; " +
-  "if [ \"$e\" -le \"$s\" ]; then " +
+  "e=$(TZ=$ez date -d \"$eday $et\" +%s) || fail 'Could not read the end time.'; " +
+  "if [ \"$e\" -le \"$s\" ] && [ \"$eday\" = \"$day\" ]; then " +
   "next=$(date -d \"$day +1 day\" +%F) && e=$(TZ=$ez date -d \"$next $et\" +%s) || fail 'Could not read the end time.'; fi; " +
   "[ \"$e\" -gt \"$s\" ] || fail 'It has to end after it starts.'; " +
   "end=$(TZ=$tz date -d \"@$e\" '+%F %H:%M') || fail 'Could not read the end time.'; " +
@@ -316,7 +318,8 @@ function editCommand(request) {
   }
   args.push("--json")
   if (!across) return args
-  return ["sh", "-c", acrossZonesScript, "sh", s.timeZone, s.date, s.startTime, s.endTimeZone, s.endTime].concat(args)
+  return ["sh", "-c", acrossZonesScript, "sh", s.timeZone, s.date, s.startTime, s.endTimeZone, s.endTime,
+    s.endDate || s.date].concat(args)
 }
 
 function deleteCommand(event) {

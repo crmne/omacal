@@ -386,6 +386,23 @@ test("an end before the start is the next morning", function() {
   assert.deepStrictEqual(args.slice(args.indexOf("--ends-on"), args.indexOf("--ends-on") + 2), ["--ends-on", "2026-09-29"])
 })
 
+test("an event over several days ends on its until day", function() {
+  var args = build({ title: "Lisbon", date: "2026-10-13", allDay: true, spanDays: 3 }).command
+  assert.strictEqual(flag(args, "--starts-on"), "2026-10-13")
+  assert.strictEqual(flag(args, "--ends-on"), "2026-10-16")
+  args = build({ title: "Offsite", date: "2026-10-16", startTime: "18:00", endTime: "10:00", spanDays: 2 }).command
+  assert.strictEqual(flag(args, "--ends-on"), "2026-10-18")
+  assert.strictEqual(flag(args, "--end-time"), "10:00")
+  // The until day is the end's day, so an earlier clock is not the morning after it.
+  args = build({ title: "Retreat", date: "2026-10-16", startTime: "18:00", endTime: "9:00", spanDays: 1 }).command
+  assert.strictEqual(flag(args, "--ends-on"), "2026-10-17")
+})
+
+test("a timed event over several days needs its end time", function() {
+  assert.ok(Hey.validateEvent({ title: "X", date: "2026-10-16", startTime: "18:00", spanDays: 2,
+    timeZone: "Europe/Berlin" }).error)
+})
+
 test("the form refuses what HEY would", function() {
   assert.ok(Hey.validateEvent({ title: " ", date: "2026-09-28" }).error)
   assert.ok(Hey.validateEvent({ title: "X", date: "2026-09-28", startTime: "nope", timeZone: "UTC" }).error)
@@ -425,6 +442,12 @@ test("an end in another zone is the same instant on the start's clock", function
   out = across({ title: "Red-eye", date: "2027-01-05", startTime: "22:00", endTime: "06:00",
     timeZone: "America/New_York", endTimeZone: "Europe/Berlin" })
   assert.ok(/--ends-on 2027-01-06 --end-time 00:00$/.test(out), out)
+})
+
+test("an end in another zone lands on the until day", function() {
+  var out = across({ title: "Trip", date: "2027-01-05", startTime: "10:00", endTime: "13:00", spanDays: 2,
+    timeZone: "Europe/Berlin", endTimeZone: "America/New_York" })
+  assert.ok(/--ends-on 2027-01-07 --end-time 19:00$/.test(out), out)
 })
 
 test("the end's zone is ignored when it is the start's, and checked when it is not", function() {
@@ -498,6 +521,14 @@ test("a multi-day all-day event moves as a whole", function() {
   assert.ok(args.indexOf("--all-day") !== -1)
   assert.strictEqual(flag(args, "--starts-on"), "2026-10-20")
   assert.strictEqual(flag(args, "--ends-on"), "2026-10-23")
+})
+
+test("a timed event can be stretched over more days", function() {
+  var e = timed(45, "Offsite", 2026, 10, 16, 9, 0, 480)
+  var args = Backend.editCommand(edit(e, { spanDays: 2 }).request)
+  assert.strictEqual(flag(args, "--starts-on"), "2026-10-16")
+  assert.strictEqual(flag(args, "--ends-on"), "2026-10-18")
+  assert.strictEqual(flag(args, "--end-time"), "17:00")
 })
 
 test("reminders the form cannot show are kept, and cannot be cleared", function() {

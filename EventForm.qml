@@ -9,8 +9,10 @@ import "Calendar.js" as Cal
 // panel's + button and the Alt+Shift+Space quick-add card are both this.
 //
 // Days and times are typed, not picked: "fri", "tomorrow", "3 oct" for the
-// day; "9", "930", "9:30pm", "21.30" for times. An end earlier than the
-// start is read as the next morning. Times are this machine's local time.
+// day; "9", "930", "9:30pm", "21.30" for times. An event over several days
+// gives its last one under "until", read from the start: "sun" is the first
+// Sunday from it, "+2" two days after it. Left blank, an end earlier than
+// the start is read as the next morning. Times are this machine's local time.
 // As in HEY's own form, a globe shows a zone under each time, the start's
 // and the end's, each a city you can type over ("new york", "tokyo"); the
 // end's follows the start's until it is given its own, for a flight that
@@ -37,6 +39,15 @@ Item {
   property string dayKey: ""
   property string todayKey: ""
   readonly property string resolvedDay: Cal.parseDay(dateField.text, todayKey !== "" ? todayKey : Cal.keyForDate(new Date()))
+  // The last day, "" while it is the start's own.
+  readonly property string resolvedUntil: untilField.text.replace(/\s+/g, "") === "" || !Cal.isDayKey(resolvedDay)
+    ? "" : Cal.parseDay(untilField.text, resolvedDay)
+  readonly property bool untilUnreadable: untilField.text.replace(/\s+/g, "") !== "" && Cal.isDayKey(resolvedDay)
+    && resolvedUntil === ""
+  readonly property int spanDays: Cal.isDayKey(resolvedUntil) ? Cal.daysBetween(resolvedDay, resolvedUntil) : 0
+  // The start the until day was last measured from, so moving the start
+  // carries the end with it.
+  property string lastStart: ""
   property var calendars: []
   property int defaultCalendarId: 0
   property bool busy: false
@@ -58,6 +69,7 @@ Item {
   // function's name shadows it.
   property alias titleInput: titleField.text
   property alias dayInput: dateField.text
+  property alias untilInput: untilField.text
   property alias startInput: startField.text
   property alias endInput: endField.text
   property alias locationInput: locationField.text
@@ -85,9 +97,6 @@ Item {
   readonly property bool repeating: !!root.editing && root.editing.recurring
   readonly property var scopeValues: root.oneDayEditable ? ["one", "all"] : ["all"]
   property string serviceName: "HEY"
-  // How many days after the start the edited event ends; the form has no
-  // end day, so an edit keeps the event's own span.
-  property int spanDays: 0
 
   // "keep" stands for reminders the form has no button for (several, or
   // another lead), and is offered only while editing an event with them.
@@ -111,15 +120,40 @@ Item {
     if (scopeRow.activeFocus) return "←→ this day or every day · Tab next · Enter save · Esc cancel"
     if (allDayRow.activeFocus) return "Space all day · Tab next · Enter " + root.verb + " · Esc cancel"
     if (dateField.activeFocus) return "↑↓ day, Shift a week · Tab next · Alt+←→ calendar · Enter " + root.verb
+    if (untilField.activeFocus) return "Last day, blank for one · ↑↓ day, Shift a week · Tab next · Enter " + root.verb
     if (startZone.activeFocus) return "Type a city · ↑↓ pick · empty is local time · Alt+Z hide zones · Enter " + root.verb
     if (endZone.activeFocus) return "Type a city · ↑↓ pick · empty is the start's zone · Alt+Z hide zones · Enter " + root.verb
     if (startField.activeFocus || endField.activeFocus) return "↑↓ 15 min · Tab next · Alt+←→ calendar · Enter " + root.verb
     return "Tab next field · Alt+←→ calendar · Alt+↑↓ reminder · Alt+A all day · Alt+Z zones · Enter " + root.verb
   }
 
-  readonly property string dayLabel: Cal.isDayKey(resolvedDay)
-    ? Qt.formatDate(Cal.dateFromKey(resolvedDay), "dddd d MMMM yyyy")
-    : ""
+  // What the typed days resolve to, so "fri" is never a guess: the day, or
+  // the first and last of several.
+  readonly property string dayLabel: {
+    if (!Cal.isDayKey(resolvedDay)) return ""
+    var first = Cal.dateFromKey(resolvedDay)
+    if (root.spanDays <= 0) return Qt.formatDate(first, "dddd d MMMM yyyy")
+    var last = Cal.dateFromKey(resolvedUntil)
+    var sameYear = first.getFullYear() === last.getFullYear()
+    return Qt.formatDate(first, sameYear ? "ddd d MMM" : "ddd d MMM yyyy") + " – "
+      + Qt.formatDate(last, "ddd d MMM yyyy") + " · " + (root.spanDays + 1) + " days"
+  }
+  readonly property string dayProblem: {
+    if (!Cal.isDayKey(resolvedDay)) return "Not a day"
+    if (root.untilUnreadable) return "Until is not a day"
+    if (root.spanDays < 0) return "It ends before it starts"
+    return ""
+  }
+
+  // Moving the start moves the last day with it, as a calendar does.
+  onResolvedDayChanged: {
+    if (!Cal.isDayKey(resolvedDay)) return
+    var was = root.lastStart
+    root.lastStart = resolvedDay
+    if (!Cal.isDayKey(was) || untilField.activeFocus || untilField.text === "") return
+    var last = Cal.parseDay(untilField.text, was)
+    if (Cal.isDayKey(last)) untilField.text = untilText(Cal.addDays(last, Cal.daysBetween(was, resolvedDay)))
+  }
 
   implicitHeight: formColumn.implicitHeight
 
@@ -130,7 +164,7 @@ Item {
   function reset() {
     root.editing = null
     root.opened = null
-    root.spanDays = 0
+    untilField.text = ""
     titleField.text = ""
     locationField.text = ""
     var today = root.todayKey !== "" ? root.todayKey : Cal.keyForDate(new Date())
@@ -157,10 +191,10 @@ Item {
     root.opened = values
     root.oneDayEditable = oneDayEditable === true
     root.scope = root.scopeValues[0]
-    root.spanDays = values.spanDays
     titleField.text = values.title
     locationField.text = values.location
     dateField.text = dayText(values.date)
+    untilField.text = values.spanDays > 0 ? untilText(Cal.addDays(values.date, values.spanDays)) : ""
     root.allDay = values.allDay
     startField.text = values.allDay ? Cal.suggestedStart(values.date, new Date()) : values.startTime
     endField.text = values.allDay ? "" : values.endTime
@@ -185,6 +219,11 @@ Item {
     return Qt.formatDate(Cal.dateFromKey(day), "d MMM yyyy")
   }
 
+  // The until field is read from the start, so it is always written out.
+  function untilText(day) {
+    return Qt.formatDate(Cal.dateFromKey(day), "d MMM yyyy")
+  }
+
   function pickCalendar(preferred) {
     for (var i = 0; i < root.calendars.length; i++)
       if (root.calendars[i].id === preferred) return preferred
@@ -196,6 +235,14 @@ Item {
     root.localError = ""
     if (!Cal.isDayKey(root.resolvedDay)) {
       root.localError = "“" + dateField.text + "” is not a day I know. Try fri, tomorrow or 3 oct."
+      return
+    }
+    if (root.untilUnreadable) {
+      root.localError = "“" + untilField.text + "” is not a day I know. Try sun, +2 or 18 oct."
+      return
+    }
+    if (root.spanDays < 0) {
+      root.localError = "It has to end on or after the day it starts."
       return
     }
     root.submitted({
@@ -217,7 +264,7 @@ Item {
 
   // Tab order, skipping the time fields while the event is all day.
   function focusOrder() {
-    var order = [titleField, dateField, calendarRow, allDayRow]
+    var order = [titleField, dateField, untilField, calendarRow, allDayRow]
     if (!root.allDay) order.push(startField, endField)
     if (!root.allDay && root.showZones) order.push(startZone, endZone)
     order.push(locationField, remindRow)
@@ -261,6 +308,14 @@ Item {
     dateField.text = dayText(Cal.addDays(base, delta))
   }
 
+  // Stepping back onto the start blanks the field: a day of its own.
+  function stepUntil(delta) {
+    if (!Cal.isDayKey(root.resolvedDay)) return
+    var base = Cal.isDayKey(root.resolvedUntil) ? root.resolvedUntil : root.resolvedDay
+    var next = Cal.addDays(base, delta)
+    untilField.text = next > root.resolvedDay ? untilText(next) : ""
+  }
+
   // Every field and row shares this. Returns having accepted the key, or
   // leaves it for the field (typing, and Left/Right inside the text).
   function handleKey(event, item) {
@@ -288,6 +343,8 @@ Item {
     else if (item === allDayRow && (key === Qt.Key_Space || left || right)) root.allDay = !root.allDay
     else if (item === dateField && key === Qt.Key_Up) stepDay(shift ? -7 : -1)
     else if (item === dateField && key === Qt.Key_Down) stepDay(shift ? 7 : 1)
+    else if (item === untilField && key === Qt.Key_Up) stepUntil(shift ? -7 : -1)
+    else if (item === untilField && key === Qt.Key_Down) stepUntil(shift ? 7 : 1)
     else if (item === startField && (key === Qt.Key_Up || key === Qt.Key_Down))
       startField.text = Cal.nudgeClock(startField.text, key === Qt.Key_Up ? -15 : 15, Cal.suggestedStart(root.resolvedDay, new Date()))
     else if (item === endField && (key === Qt.Key_Up || key === Qt.Key_Down)) {
@@ -300,6 +357,7 @@ Item {
   }
 
   onCalendarsChanged: if (root.calendarId === 0) root.calendarId = pickCalendar(root.defaultCalendarId)
+  Component.onCompleted: root.lastStart = root.resolvedDay
 
 
   Process {
@@ -376,8 +434,13 @@ Item {
       Keys.onPressed: function(event) { root.handleKey(event, titleField) }
     }
 
-    Row {
+    // The first day and, for an event over several, the last, with what
+    // they resolve to under them.
+    Column {
       width: parent.width
+      spacing: Style.space(4)
+
+    Row {
       spacing: Style.space(10)
 
       Text {
@@ -399,14 +462,35 @@ Item {
         Keys.onPressed: function(event) { root.handleKey(event, dateField) }
       }
 
-      // What the typed day resolves to, so "fri" is never a guess.
       Text {
         anchors.verticalCenter: parent.verticalCenter
-        textFormat: Text.PlainText
-        text: root.dayLabel !== "" ? root.dayLabel : "Not a day"
-        color: root.dayLabel !== "" ? Qt.darker(root.foreground, 1.4) : Color.urgent
+        leftPadding: Style.space(6)
+        text: "UNTIL"
+        color: Qt.darker(root.foreground, 1.5)
         font.family: root.fontFamily
         font.pixelSize: Style.font.bodySmall
+        font.letterSpacing: 1
+      }
+
+      TextField {
+        id: untilField
+        width: Style.space(130)
+        anchors.verticalCenter: parent.verticalCenter
+        placeholderText: "same day"
+        foreground: root.foreground
+        font.family: root.fontFamily
+        Keys.onPressed: function(event) { root.handleKey(event, untilField) }
+      }
+    }
+
+      Text {
+        width: parent.width
+        textFormat: Text.PlainText
+        text: root.dayProblem !== "" ? root.dayProblem : root.dayLabel
+        color: root.dayProblem !== "" ? Color.urgent : Qt.darker(root.foreground, 1.4)
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.bodySmall
+        elide: Text.ElideRight
       }
     }
 
