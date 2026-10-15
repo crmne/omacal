@@ -1,7 +1,9 @@
 import QtQuick
+import Quickshell.Io
 import qs.Commons
 import qs.Ui
 import "Calendar.js" as Cal
+import "Places.js" as Places
 
 // HEY Calendar's settings, inside the panel. Omarchy keeps a widget's
 // schema but draws no settings screen for it yet, so this is where they are
@@ -96,6 +98,48 @@ FocusScope {
   }
 
   implicitHeight: settingsColumn.implicitHeight
+
+  // The Google key goes to its own file, mode 600, through stdin, so it is
+  // never in shell.json or on a command line. An empty key removes it.
+  property string keyError: ""
+
+  function saveKey(text) {
+    var key = String(text || "").replace(/\s+/g, "")
+    if (key !== "" && !Places.isGoogleKey(key)) {
+      root.keyError = "That is not a Google Maps API key."
+      return
+    }
+    root.keyError = ""
+    keyWriter.pendingKey = key
+    keyWriter.running = true
+  }
+
+  // Reads the key file the same way the form does, to say which service
+  // is in use.
+  PlaceSearch {
+    id: placeKey
+    visible: false
+  }
+
+  Process {
+    id: keyWriter
+    property string pendingKey: ""
+    command: ["sh", "-c",
+      "umask 077; if [ -z \"$2\" ]; then rm -f \"$1\"; exit; fi; "
+      + "mkdir -p \"${1%/*}\" && cat > \"$1.new\" && chmod 600 \"$1.new\" && mv -f \"$1.new\" \"$1\"",
+      "omacal-places-key", placeKey.keyPath, keyWriter.pendingKey === "" ? "" : "write"]
+    stdinEnabled: true
+    onStarted: {
+      write(pendingKey)
+      stdinEnabled = false
+    }
+    onExited: function(code) {
+      stdinEnabled = true
+      if (code !== 0) root.keyError = "Could not save the key to " + placeKey.keyPath + "."
+      else placeKeyField.text = ""
+      pendingKey = ""
+    }
+  }
 
   Keys.onEscapePressed: root.closed()
 
@@ -232,6 +276,67 @@ FocusScope {
       foreground: root.foreground
       fontFamily: root.fontFamily
       onClicked: root.save("liveSync", !checked)
+    }
+
+    // ---- Places
+    Toggle {
+      width: parent.width
+      label: "Suggest places"
+      description: "Look up what you type in Where? and offer the places it could mean, as HEY does."
+      checked: root.value("placeSuggestions", true) !== false
+      foreground: root.foreground
+      fontFamily: root.fontFamily
+      onClicked: root.save("placeSuggestions", !checked)
+    }
+
+    Label { text: "GOOGLE MAPS API KEY" }
+
+    Row {
+      spacing: Style.space(8)
+
+      TextField {
+        id: placeKeyField
+        width: Style.space(220)
+        password: true
+        placeholderText: placeKey.provider === "google" ? "Saved" : "None: OpenStreetMap"
+        foreground: root.foreground
+        font.family: root.fontFamily
+        onAccepted: if (text !== "") root.saveKey(text)
+        Keys.onEscapePressed: root.closed()
+      }
+
+      Button {
+        anchors.verticalCenter: parent.verticalCenter
+        text: "Save"
+        bordered: true
+        focusable: true
+        enabled: placeKeyField.text !== "" && !keyWriter.running
+        foreground: root.foreground
+        fontFamily: root.fontFamily
+        fontSize: Style.font.bodySmall
+        onClicked: root.saveKey(placeKeyField.text)
+      }
+
+      Button {
+        anchors.verticalCenter: parent.verticalCenter
+        visible: placeKey.provider === "google"
+        text: "Remove"
+        focusable: true
+        enabled: !keyWriter.running
+        foreground: root.foreground
+        fontFamily: root.fontFamily
+        fontSize: Style.font.bodySmall
+        onClicked: root.saveKey("")
+      }
+    }
+
+    Note {
+      text: root.keyError !== "" ? root.keyError
+        : (placeKey.provider === "google"
+          ? "Places come from Google, which sees what you type in Where?."
+          : "Places come from OpenStreetMap, through Komoot's free Photon server, which sees what you type in Where?. "
+            + "A Google Maps key with the Places API (New) turned on gives Google's, as in HEY.")
+      color: root.keyError !== "" ? Color.urgent : Qt.darker(root.foreground, 1.8)
     }
 
     // ---- Calendars

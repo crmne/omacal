@@ -36,7 +36,8 @@
       "timeFormat": "auto",
       "refreshIntervalSec": 300,
       "quickAddShortcut": "ALT + SHIFT + SPACE",
-      "barEvent": "soon"
+      "barEvent": "soon",
+      "placeSuggestions": true
     },
     "schema": [
       {
@@ -59,6 +60,13 @@
         "label": "Show HEY reminders as notifications",
         "defaultValue": true,
         "description": "Uses the reminders set on each event in HEY."
+      },
+      {
+        "key": "placeSuggestions",
+        "type": "boolean",
+        "label": "Suggest places",
+        "defaultValue": true,
+        "description": "Offers places while you type in Where?, from Google with a Google Maps API key (set in OmaCal's own settings) or else OpenStreetMap. What you type there is sent to that service."
       },
       {
         "key": "quickAddShortcut",

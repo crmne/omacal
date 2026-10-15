@@ -1186,6 +1186,7 @@ Panel {
                 foreground: root.contentForeground
                 fontFamily: root.contentFontFamily
                 serviceName: root.hostWidget ? root.hostWidget.backendName : "HEY"
+                placeSuggestions: root.setting("placeSuggestions", true) !== false
                 onSubmitted: function(form) { root.submitEvent(form) }
                 onCanceled: root.cancelComposing()
                 onOpenRequested: function(url) { if (root.hostWidget) root.hostWidget.openUrl(url) }

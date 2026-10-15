@@ -2,6 +2,7 @@
 var assert = require("assert")
 var Hey = require("../Calendar.js")
 var Backend = require("../backends/Hey.js")
+var Places = require("../Places.js")
 
 var tz = process.env.TZ || "local"
 var failures = 0
@@ -459,6 +460,90 @@ test("the end's zone is ignored when it is the start's, and checked when it is n
   // No end time: an hour after the start, whatever the end's zone says.
   args = build({ title: "X", date: "2027-01-05", startTime: "10:00", timeZone: "Europe/Berlin", endTimeZone: "Asia/Tokyo" }).command
   assert.strictEqual(args[0], "timeout")
+})
+
+// ---- Places
+
+test("places are looked up only once there is something to look up", function() {
+  assert.strictEqual(Places.request("ca", "", "", "en_GB"), null)
+  assert.strictEqual(Places.request("   ", "", "", "en_GB"), null)
+  assert.ok(Places.request("caf", "", "", "en_GB"))
+})
+
+test("without a Google key, places come from OpenStreetMap, with the query escaped", function() {
+  var r = Places.request("Café & Bar", "", "s", "de_DE")
+  assert.strictEqual(r.provider, "photon")
+  assert.strictEqual(r.method, "GET")
+  assert.ok(r.url.indexOf("q=Caf%C3%A9%20%26%20Bar&") !== -1, r.url)
+  assert.ok(/&lang=de$/.test(r.url), r.url)
+  assert.ok(!/lang=/.test(Places.request("cafe", "", "s", "it_IT").url))
+  // Something that is not a key is never sent as one.
+  assert.strictEqual(Places.request("cafe", "not a key!", "s", "en").provider, "photon")
+})
+
+test("with a Google key, the key goes in a header and never the URL", function() {
+  var key = "AIzaSyA-abcdefghijklmnopqrstuvwxyz012345"
+  var r = Places.request("cafe luna", " " + key + "\n", "tok", "it_IT")
+  assert.strictEqual(r.provider, "google")
+  assert.strictEqual(r.method, "POST")
+  assert.strictEqual(r.headers["X-Goog-Api-Key"], key)
+  assert.strictEqual(r.url.indexOf(key), -1)
+  assert.deepStrictEqual(JSON.parse(r.body), { input: "cafe luna", sessionToken: "tok", languageCode: "it" })
+})
+
+test("Google's places are read, its query predictions are not", function() {
+  var out = Places.parseGoogle(JSON.stringify({ suggestions: [
+    { placePrediction: { text: { text: "Café Luna, Via Roma 1, Milan, Italy" },
+      structuredFormat: { mainText: { text: "Café Luna" }, secondaryText: { text: "Via Roma 1, Milan, Italy" } } } },
+    { queryPrediction: { text: { text: "cafe luna near me" } } },
+    { placePrediction: { text: { text: "Luna Park, Sydney" } } }
+  ] }))
+  assert.deepStrictEqual(out, [
+    { title: "Café Luna", detail: "Via Roma 1, Milan, Italy", value: "Café Luna, Via Roma 1, Milan, Italy" },
+    { title: "Luna Park, Sydney", detail: "", value: "Luna Park, Sydney" }
+  ])
+  assert.deepStrictEqual(Places.parseGoogle("<html>"), [])
+  assert.deepStrictEqual(Places.parseGoogle("{}"), [])
+})
+
+test("OpenStreetMap places read as a name over its address", function() {
+  var out = Places.parsePhoton(JSON.stringify({ features: [
+    { properties: { name: "BeLuna Café", street: "Kaiser-Friedrich-Straße", housenumber: "76",
+      postcode: "10585", city: "Berlin", country: "Deutschland" } },
+    { properties: { street: "Via Roma", housenumber: "1", city: "Milano", country: "Italia" } },
+    { properties: { name: "BeLuna Café", street: "Kaiser-Friedrich-Straße", housenumber: "76",
+      postcode: "10585", city: "Berlin", country: "Deutschland" } },
+    { properties: { city: "Lisboa", state: "Lisboa", country: "Portugal" } }
+  ] }))
+  assert.strictEqual(out.length, 3)
+  assert.strictEqual(out[0].value, "BeLuna Café, Kaiser-Friedrich-Straße 76, 10585 Berlin, Deutschland")
+  assert.strictEqual(out[1].title, "Via Roma 1")
+  assert.strictEqual(out[1].detail, "Milano, Italia")
+  assert.strictEqual(out[2].value, "Lisboa, Portugal")
+})
+
+test("places near this machine's zone come first, without ruling others out", function() {
+  var table = "# comment\nDE,DK\t+5230+01322\tEurope/Berlin\tmost of Germany\n"
+    + "AR\t-3436-05827\tAmerica/Argentina/Buenos_Aires\tBuenos Aires\n"
+  var berlin = Places.zoneCoordinates(table, "Europe/Berlin")
+  assert.deepStrictEqual(berlin, { latitude: 52.5, longitude: 13.3667 })
+  assert.deepStrictEqual(Places.zoneCoordinates(table, "America/Argentina/Buenos_Aires"), { latitude: -34.6, longitude: -58.45 })
+  assert.strictEqual(Places.zoneCoordinates(table, "Mars/Olympus"), null)
+  var body = JSON.parse(Places.request("cafe", "AIzaSyA-abcdefghijklmnopqrstuvwxyz012345", "t", "en", berlin).body)
+  assert.deepStrictEqual(body.locationBias, { circle: { center: berlin, radius: 50000 } })
+  assert.ok(/&lat=52\.5&lon=13\.3667$/.test(Places.request("cafe", "", "t", "it", berlin).url))
+  assert.strictEqual(JSON.parse(Places.request("cafe", "AIzaSyA-abcdefghijklmnopqrstuvwxyz012345", "t", "en", null).body).locationBias, undefined)
+})
+
+test("a refused Google key says so", function() {
+  var body = JSON.stringify({ error: { message: "API key not valid. Please pass a valid API key." } })
+  assert.ok(/refused.*API key not valid/.test(Places.failure("google", 400, body)))
+  assert.strictEqual(Places.failure("photon", 500, ""), "")
+})
+
+test("the Google key lives in its own file under the config directory", function() {
+  assert.strictEqual(Places.keyPath("", "/home/x"), "/home/x/.config/omacal/google-places-key")
+  assert.strictEqual(Places.keyPath("/cfg", "/home/x"), "/cfg/omacal/google-places-key")
 })
 
 // ---- Editing

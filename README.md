@@ -25,7 +25,9 @@ plug in as backends (see [Backends](#backends)).
   own form, the globe next to the times (or `Alt+Z`) shows a zone under
   each of them, as a city you can type over (`new york`, `tokyo`); the
   end's follows the start's unless you give it its own, for a flight from
-  Berlin at 10:00 to New York at 13:00.
+  Berlin at 10:00 to New York at 13:00. **Where?** suggests places as you
+  type, as HEY's does: Google's with a Google Maps API key, OpenStreetMap's
+  without one (see [What it runs](#what-it-runs)).
 - **Edit events right here.** Clicking an event (or `E`, or its number
   `1` to `9`) opens it in the same form: change its title, day, times,
   zones, place, calendar or reminder, and only what you changed is sent to
@@ -121,8 +123,8 @@ touches nothing in your calendar.
 
 ## What it runs
 
-Everything goes through the backend's command-line tool; OmaCal makes no
-network requests of its own and stores no credentials. For HEY:
+Everything that reads or writes your calendar goes through the backend's
+command-line tool, and OmaCal holds no calendar credentials. For HEY:
 `hey event week` or `hey event list`, `hey calendar list`, `hey event add`,
 `edit` and `delete`, `hey timetrack`, and a long-running `hey watch` for live
 sync. Every call is bounded by `timeout` and `head -c`, and takes its input
@@ -133,6 +135,18 @@ PyGObject, part of Omarchy), which gets the event's title, calendar, place
 and link in its environment rather than its arguments, so other users on the
 machine cannot read them from the process list. `hyprctl` binds the
 quick-add shortcut.
+
+The one network request OmaCal makes itself is the place lookup behind the
+form's **Where?** field, and only while you type in it: what you have typed,
+a moment after you stop, and nothing else. Without a key it goes to
+OpenStreetMap through [Komoot's public Photon server](https://photon.komoot.io)
+(free, no account, results under the OpenStreetMap licence). With a Google
+Maps API key that has the Places API (New) turned on, it goes to
+[Google Places](https://developers.google.com/maps/documentation/places/web-service/place-autocomplete)
+instead, billed to that key's project. Paste the key in the settings: it is
+kept in `~/.config/omacal/google-places-key`, readable only by you, written
+through stdin and sent in a request header, so it is never in `shell.json`,
+a command line or a URL. Turn **Suggest places** off and nothing is sent.
 
 ## Keys
 
@@ -150,8 +164,9 @@ where the focus is.
 | `Alt+↑` `Alt+↓` | Switch reminder, from any field |
 | `Alt+A` | Toggle all day, from any field |
 | `Alt+Z` | Show the time zones under the times, or hide them and go back to local time |
-| `Enter` | Add the event, or save the changes |
-| `Esc` | Cancel |
+| `↑` `↓` in Where? | Pick one of the suggested places |
+| `Enter` | Take the picked place; otherwise add the event, or save the changes |
+| `Esc` | Put the place suggestions away; otherwise cancel |
 
 ### Calendar panel
 
@@ -188,6 +203,7 @@ at once, so it can be edited there too.
 | `liveSync` | `true` | Keep a `hey watch` running for instant updates. |
 | `refreshIntervalSec` | `300` | Polling fallback, 30 to 3600. |
 | `hiddenCalendars` | `""` | Comma-separated calendar names to leave out. |
+| `placeSuggestions` | `true` | Suggest places in the form's Where? field. The Google Maps key is not here but in its own file (see [What it runs](#what-it-runs)). |
 
 The panel also stores `weekStartDay`, `birthYear`, `lifeExpectancy` (stock)
 and `lastCalendarId` (the calendar the last new event went on).

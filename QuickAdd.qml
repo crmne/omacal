@@ -188,6 +188,7 @@ Item {
         todayKey: Cal.keyForDate(new Date())
         calendars: root.calendars
         defaultCalendarId: root.lastCalendarId()
+        placeSuggestions: { var entry = root.widgetEntry(); return !entry || entry.placeSuggestions !== false }
         busy: root.busy
         error: root.error
         foreground: Color.popups.text

@@ -20,6 +20,10 @@ import "Calendar.js" as Cal
 // created through `hey event add`, so HEY applies its own defaults to
 // anything left blank.
 //
+// "Where?" suggests places as it is typed in, as HEY's does: Google's when
+// a Google Maps key is set in the settings, else OpenStreetMap's. Up and
+// Down pick one, Enter or a click takes it, Escape puts the list away.
+//
 // The same form edits an event (load()): it opens on the event as it is,
 // and saving sends only what changed. On a repeating event it asks whether
 // the change is for this day or every day of the series.
@@ -97,6 +101,13 @@ Item {
   readonly property bool repeating: !!root.editing && root.editing.recurring
   readonly property var scopeValues: root.oneDayEditable ? ["one", "all"] : ["all"]
   property string serviceName: "HEY"
+  // Whether "Where?" asks a places service while it is typed in.
+  property bool placeSuggestions: true
+  // The place last taken from the list (or the edited event's own), which
+  // is not looked up again while the field still reads it.
+  property string pickedPlace: ""
+  property int placeCursor: -1
+  readonly property bool showsPlaces: places.active && (places.results.length > 0 || places.error !== "")
 
   // "keep" stands for reminders the form has no button for (several, or
   // another lead), and is offered only while editing an event with them.
@@ -123,6 +134,8 @@ Item {
     if (untilField.activeFocus) return "Last day, blank for one · ↑↓ day, Shift a week · Tab next · Enter " + root.verb
     if (startZone.activeFocus) return "Type a city · ↑↓ pick · empty is local time · Alt+Z hide zones · Enter " + root.verb
     if (endZone.activeFocus) return "Type a city · ↑↓ pick · empty is the start's zone · Alt+Z hide zones · Enter " + root.verb
+    if (locationField.activeFocus && places.results.length > 0)
+      return "↑↓ pick a place · Enter take it · Esc hide · Tab next"
     if (startField.activeFocus || endField.activeFocus) return "↑↓ 15 min · Tab next · Alt+←→ calendar · Enter " + root.verb
     return "Tab next field · Alt+←→ calendar · Alt+↑↓ reminder · Alt+A all day · Alt+Z zones · Enter " + root.verb
   }
@@ -166,6 +179,7 @@ Item {
     root.opened = null
     untilField.text = ""
     titleField.text = ""
+    root.pickedPlace = ""
     locationField.text = ""
     var today = root.todayKey !== "" ? root.todayKey : Cal.keyForDate(new Date())
     var day = Cal.isDayKey(root.dayKey) ? root.dayKey : today
@@ -192,6 +206,7 @@ Item {
     root.oneDayEditable = oneDayEditable === true
     root.scope = root.scopeValues[0]
     titleField.text = values.title
+    root.pickedPlace = values.location
     locationField.text = values.location
     dateField.text = dayText(values.date)
     untilField.text = values.spanDays > 0 ? untilText(Cal.addDays(values.date, values.spanDays)) : ""
@@ -295,6 +310,14 @@ Item {
     }
   }
 
+  function takePlace(index) {
+    var place = places.results[index]
+    if (!place) return
+    root.pickedPlace = place.value
+    locationField.text = place.value
+    places.picked()
+  }
+
   function stepCalendar(delta) {
     root.calendarId = Cal.cycle(root.calendarIds, root.calendarId, delta)
   }
@@ -325,7 +348,19 @@ Item {
     var left = key === Qt.Key_Left || (!item.selectAll && event.text === "h")
     var right = key === Qt.Key_Right || (!item.selectAll && event.text === "l")
 
-    if (key === Qt.Key_Escape) root.canceled()
+    var listed = item === locationField && places.results.length > 0
+    if (listed && !alt && (key === Qt.Key_Up || key === Qt.Key_Down)) {
+      var count = places.results.length
+      root.placeCursor = key === Qt.Key_Up
+        ? (root.placeCursor <= 0 ? count - 1 : root.placeCursor - 1)
+        : (root.placeCursor + 1) % count
+    }
+    else if (listed && root.placeCursor >= 0 && (key === Qt.Key_Return || key === Qt.Key_Enter)) takePlace(root.placeCursor)
+    else if (item === locationField && root.showsPlaces && key === Qt.Key_Escape) {
+      root.pickedPlace = locationField.text
+      places.clear()
+    }
+    else if (key === Qt.Key_Escape) root.canceled()
     else if (key === Qt.Key_Return || key === Qt.Key_Enter) root.submit()
     else if (key === Qt.Key_Backtab || (key === Qt.Key_Tab && shift)) focusStep(item, -1)
     else if (key === Qt.Key_Tab) focusStep(item, 1)
@@ -723,6 +758,94 @@ Item {
       foreground: root.foreground
       font.family: root.fontFamily
       Keys.onPressed: function(event) { root.handleKey(event, locationField) }
+    }
+
+    PlaceSearch {
+      id: places
+      // Not drawn: it only looks things up, and a drawn one would take a
+      // row of the column's spacing.
+      visible: false
+      query: locationField.text
+      zone: root.localZone
+      active: root.placeSuggestions && locationField.activeFocus && locationField.text !== root.pickedPlace
+      onResultsChanged: root.placeCursor = -1
+    }
+
+    // The places the typing could mean: the name, the rest of the address
+    // under it, and whose map they come from, as both services ask.
+    Column {
+      id: placeList
+      visible: root.showsPlaces
+      width: parent.width
+      spacing: Style.space(2)
+
+      Repeater {
+        model: places.active ? places.results : []
+
+        Rectangle {
+          required property var modelData
+          required property int index
+          readonly property bool lit: index === root.placeCursor || placeMouse.containsMouse
+          width: placeList.width
+          height: placeText.implicitHeight + Style.space(10)
+          radius: Style.cornerRadius
+          color: lit ? Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.2) : "transparent"
+          border.width: index === root.placeCursor ? 1 : 0
+          border.color: root.accent
+
+          Column {
+            id: placeText
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.verticalCenter: parent.verticalCenter
+            anchors.leftMargin: Style.space(10)
+            anchors.rightMargin: Style.space(10)
+
+            Text {
+              width: parent.width
+              textFormat: Text.PlainText
+              text: modelData.title
+              color: root.foreground
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.bodySmall
+              elide: Text.ElideRight
+            }
+
+            Text {
+              visible: modelData.detail !== ""
+              width: parent.width
+              textFormat: Text.PlainText
+              text: modelData.detail
+              color: Qt.darker(root.foreground, 1.6)
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption
+              elide: Text.ElideRight
+            }
+          }
+
+          MouseArea {
+            id: placeMouse
+            anchors.fill: parent
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            // Pressing would take the keyboard from the field and close the list.
+            preventStealing: true
+            onPressed: function(mouse) { mouse.accepted = true; root.takePlace(index) }
+          }
+        }
+      }
+
+      Text {
+        width: parent.width
+        textFormat: Text.PlainText
+        horizontalAlignment: places.error !== "" ? Text.AlignLeft : Text.AlignRight
+        text: places.error !== "" ? places.error
+          : (places.provider === "google" ? "Google Maps" : "© OpenStreetMap contributors")
+        color: places.error !== "" ? Color.urgent : Qt.darker(root.foreground, 1.9)
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.caption
+        wrapMode: Text.Wrap
+      }
     }
 
     Row {
