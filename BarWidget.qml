@@ -8,6 +8,7 @@ import "Calendar.js" as Cal
 // The calendar service OmaCal reads. One backend is wired in today; a
 // second is a file in backends/ and the choice of which module this is.
 import "backends/Hey.js" as Backend
+import "backends/HeyApi.js" as Api
 
 // Date/time label for the bar, and the host for the calendar popup.
 //
@@ -285,8 +286,10 @@ BarWidget {
   property string writingDayKey: ""
   signal writeFinished(bool ok, string message)
 
+  // The writes that carry ids only (deleting, starting and stopping the
+  // tracker) run hey-cli.
   function runWrite(command, dayKey) {
-    if (writeProcess.running || !command || command.length === 0) return false
+    if (root.writing || !command || command.length === 0) return false
     root.writeError = ""
     root.writing = true
     root.writingDayKey = dayKey || ""
@@ -295,11 +298,27 @@ BarWidget {
     return true
   }
 
-  function finishWrite(exitCode, stdout) {
-    root.writing = false
+  // The ones that carry what you typed go to HEY's API from here, so the
+  // text is never on a command line (ApiWriter.qml).
+  function runApiWrite(begin, dayKey) {
+    if (root.writing || apiWriter.running) return false
+    root.writeError = ""
+    root.writing = true
+    root.writingDayKey = dayKey || ""
+    if (!begin()) {
+      root.writing = false
+      return false
+    }
+    return true
+  }
+
+  function finishCliWrite(exitCode, stdout) {
     var result = Backend.writeResult(exitCode, stdout)
-    var ok = result.ok
-    var message = result.message
+    finishWrite(result.ok, result.message)
+  }
+
+  function finishWrite(ok, message) {
+    root.writing = false
     root.writeError = ok ? "" : message
     if (!ok) root.stoppedAt = 0
     if (root.writingDayKey !== "") invalidateDay(root.writingDayKey)
@@ -314,18 +333,18 @@ BarWidget {
       root.writeFinished(false, checked.error)
       return false
     }
-    return runWrite(Backend.createCommand(checked.request), form.date)
+    return runApiWrite(function() { return apiWriter.create(checked.request) }, form.date)
   }
 
-  // One day of a series can be edited alone by a CLI that takes occurrences.
+  // One day of a series can be edited alone: HEY's API takes occurrences.
   function editsOneDay(event) {
-    return Cal.editsOneDay(event, Backend.editsOccurrences(root.backendVersion))
+    return Cal.editsOneDay(event, true)
   }
 
   // `before` is what the form opened with (Cal.eventFormValues), `form`
   // what it holds now; only the difference is sent.
   function editEvent(event, before, form) {
-    var checked = Cal.editRequest(event, before, form, form.scope, Backend.editsOccurrences(root.backendVersion))
+    var checked = Cal.editRequest(event, before, form, form.scope, true)
     if (checked.error) {
       root.writeError = checked.error
       root.writeFinished(false, checked.error)
@@ -336,8 +355,7 @@ BarWidget {
       root.writeFinished(true, "")
       return true
     }
-    var command = Backend.editCommand(checked.request)
-    if (command.length === 0) {
+    if (Api.editTarget(checked.request) === null) {
       root.writeError = "OmaCal cannot name that event to " + root.backendName + ". Edit it there."
       root.writeFinished(false, root.writeError)
       return false
@@ -345,7 +363,7 @@ BarWidget {
     // The day it was on and the day it moves to both need reading again.
     var from = Cal.eventDayKeys(event)
     if (from.length > 0 && from[0] !== form.date) invalidateDay(from[0])
-    return runWrite(command, form.date)
+    return runApiWrite(function() { return apiWriter.edit(checked.request) }, form.date)
   }
 
   function deleteEvent(event, dayKey) {
@@ -363,7 +381,7 @@ BarWidget {
 
   function renameTimeTrack(id, name) {
     root.renameTrackId = ""
-    return runWrite(Backend.trackRenameCommand(id, name), "")
+    return runApiWrite(function() { return apiWriter.renameTrack(id, name) }, "")
   }
 
   function deleteTimeTrack(id) {
@@ -591,12 +609,17 @@ BarWidget {
     stdout: StdioCollector {
       onStreamFinished: {
         writeProcess.finished = true
-        root.finishWrite(writeProcess.exitCode, text)
+        root.finishCliWrite(writeProcess.exitCode, text)
       }
     }
     onExited: function(exitCode) {
-      if (!writeProcess.finished && root.writing) root.finishWrite(exitCode, "")
+      if (!writeProcess.finished && root.writing) root.finishCliWrite(exitCode, "")
     }
+  }
+
+  ApiWriter {
+    id: apiWriter
+    onFinished: function(ok, message) { root.finishWrite(ok, message) }
   }
 
   // ---- Live sync, for backends that can stream their changes (HEY: `hey

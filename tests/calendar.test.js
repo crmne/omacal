@@ -2,6 +2,7 @@
 var assert = require("assert")
 var Hey = require("../Calendar.js")
 var Backend = require("../backends/Hey.js")
+var Api = require("../backends/HeyApi.js")
 var Places = require("../Places.js")
 var Edit = require("../KeyEdit.js")
 
@@ -367,100 +368,50 @@ test("arrow keys nudge times on a quarter-hour grid, and wrap lists", function()
   assert.strictEqual(Hey.cycle(["", "10m"], "", 1), "10m")
 })
 
-// validateEvent checks the form; the backend turns the request into argv.
+// Validation produces data for the HTTP writer, never a command line.
 function build(form) {
-  var checked = Hey.validateEvent(Object.assign({ timeZone: "Europe/Berlin" }, form))
-  return checked.error ? checked : { command: Backend.createCommand(checked.request) }
+  return Hey.validateEvent(Object.assign({ timeZone: "Europe/Berlin" }, form))
 }
 
-test("the add command is an argv, with every field in its own argument", function() {
-  var built = build({ title: "Dinner; rm -rf ~", date: "2026-09-28", startTime: "7pm", endTime: "22:00",
-    calendarId: 3, location: "Café Luna", remind: "30m" })
-  var args = built.command
-  assert.ok(args.indexOf("Dinner; rm -rf ~") !== -1)
-  assert.deepStrictEqual(args.slice(args.indexOf("--start-time"), args.indexOf("--start-time") + 2), ["--start-time", "19:00"])
-  assert.ok(args.indexOf("--calendar") !== -1 && args.indexOf("3") !== -1)
-  assert.ok(args.indexOf("--remind") !== -1)
+test("new events carry literal text and validated times", function() {
+  var r = build({ title: "Dinner; rm -rf ~", date: "2026-09-28", startTime: "7pm", endTime: "22:00",
+    calendarId: 3, location: "Café Luna", remind: "30m" }).request
+  assert.strictEqual(r.title, "Dinner; rm -rf ~")
+  assert.strictEqual(r.startTime, "19:00")
+  assert.strictEqual(r.calendarId, 3)
+  assert.strictEqual(r.location, "Café Luna")
+  assert.strictEqual(r.remind, "30m")
+  assert.strictEqual(r.timeZone, "Europe/Berlin")
 })
 
 test("an end before the start is the next morning", function() {
-  var args = build({ title: "Party", date: "2026-09-28", startTime: "22:00", endTime: "1:00" }).command
-  assert.deepStrictEqual(args.slice(args.indexOf("--ends-on"), args.indexOf("--ends-on") + 2), ["--ends-on", "2026-09-29"])
+  assert.strictEqual(build({ title: "Party", date: "2026-09-28", startTime: "22:00", endTime: "1:00" }).request.endDate, "2026-09-29")
 })
 
 test("an event over several days ends on its until day", function() {
-  var args = build({ title: "Lisbon", date: "2026-10-13", allDay: true, spanDays: 3 }).command
-  assert.strictEqual(flag(args, "--starts-on"), "2026-10-13")
-  assert.strictEqual(flag(args, "--ends-on"), "2026-10-16")
-  args = build({ title: "Offsite", date: "2026-10-16", startTime: "18:00", endTime: "10:00", spanDays: 2 }).command
-  assert.strictEqual(flag(args, "--ends-on"), "2026-10-18")
-  assert.strictEqual(flag(args, "--end-time"), "10:00")
-  // The until day is the end's day, so an earlier clock is not the morning after it.
-  args = build({ title: "Retreat", date: "2026-10-16", startTime: "18:00", endTime: "9:00", spanDays: 1 }).command
-  assert.strictEqual(flag(args, "--ends-on"), "2026-10-17")
+  var r = build({ title: "Lisbon", date: "2026-10-13", allDay: true, spanDays: 3 }).request
+  assert.strictEqual(r.date, "2026-10-13")
+  assert.strictEqual(r.endDate, "2026-10-16")
+  r = build({ title: "Offsite", date: "2026-10-16", startTime: "18:00", endTime: "10:00", spanDays: 2 }).request
+  assert.strictEqual(r.endDate, "2026-10-18")
+  assert.strictEqual(r.endTime, "10:00")
+  assert.strictEqual(build({ title: "Retreat", date: "2026-10-16", startTime: "18:00", endTime: "9:00", spanDays: 1 }).request.endDate, "2026-10-17")
 })
 
-test("a timed event over several days needs its end time", function() {
-  assert.ok(Hey.validateEvent({ title: "X", date: "2026-10-16", startTime: "18:00", spanDays: 2,
-    timeZone: "Europe/Berlin" }).error)
+test("the form refuses missing titles, invalid times and missing multi-day end times", function() {
+  assert.ok(build({ title: "X", date: "2026-10-16", startTime: "18:00", spanDays: 2 }).error)
+  assert.ok(build({ title: " ", date: "2026-09-28" }).error)
+  assert.ok(build({ title: "X", date: "2026-09-28", startTime: "nope" }).error)
+  assert.ok(build({ title: "X", date: "2026-09-28", startTime: "10:00", endTime: "10:00" }).error)
 })
 
-test("the form refuses what HEY would", function() {
-  assert.ok(Hey.validateEvent({ title: " ", date: "2026-09-28" }).error)
-  assert.ok(Hey.validateEvent({ title: "X", date: "2026-09-28", startTime: "nope", timeZone: "UTC" }).error)
-  assert.ok(Hey.validateEvent({ title: "X", date: "2026-09-28", startTime: "10:00", endTime: "10:00", timeZone: "UTC" }).error)
-})
-
-// hey-cli up to 1.7 sends no zone when $TZ is unset, and HEY then reads the
-// clock times as UTC: 18:30 in Berlin became 20:30.
-test("a timed event always names the zone its times are in", function() {
-  var args = build({ title: "Palestra", date: "2026-09-30", startTime: "18:30", endTime: "20:00" }).command
-  assert.deepStrictEqual(args.slice(args.indexOf("--time-zone"), args.indexOf("--time-zone") + 2), ["--time-zone", "Europe/Berlin"])
-  args = build({ title: "Call", date: "2026-09-30", startTime: "9", timeZone: "America/New_York" }).command
-  assert.strictEqual(args[args.indexOf("--time-zone") + 1], "America/New_York")
-})
-
-test("a timed event with no zone, or a made-up one, is refused rather than guessed", function() {
-  assert.ok(Hey.validateEvent({ title: "X", date: "2026-09-30", startTime: "18:30", timeZone: "" }).error)
-  assert.ok(Hey.validateEvent({ title: "X", date: "2026-09-30", startTime: "18:30", timeZone: "Berlin" }).error)
-  assert.ok(Hey.validateEvent({ title: "X", date: "2026-09-30", startTime: "18:30", timeZone: "--help" }).error)
-})
-
-// HEY keeps a zone per end; hey-cli takes one, so the backend moves an end
-// on another clock onto the start's. Runs the real script, echoing the argv.
-function across(form) {
-  var args = build(form).command
-  assert.strictEqual(args[0], "sh")
-  var at = args.indexOf("timeout")
-  var run = require("child_process").spawnSync(args[0], args.slice(1, at).concat(["echo"], args.slice(at)))
-  return String(run.stdout).trim()
-}
-
-test("an end in another zone is the same instant on the start's clock", function() {
-  var out = across({ title: "Flight", date: "2027-01-05", startTime: "10:00", endTime: "13:00",
-    timeZone: "Europe/Berlin", endTimeZone: "America/New_York" })
-  assert.ok(/--time-zone Europe\/Berlin /.test(out), out)
-  assert.ok(/--ends-on 2027-01-05 --end-time 19:00$/.test(out), out)
-  out = across({ title: "Red-eye", date: "2027-01-05", startTime: "22:00", endTime: "06:00",
-    timeZone: "America/New_York", endTimeZone: "Europe/Berlin" })
-  assert.ok(/--ends-on 2027-01-06 --end-time 00:00$/.test(out), out)
-})
-
-test("an end in another zone lands on the until day", function() {
-  var out = across({ title: "Trip", date: "2027-01-05", startTime: "10:00", endTime: "13:00", spanDays: 2,
-    timeZone: "Europe/Berlin", endTimeZone: "America/New_York" })
-  assert.ok(/--ends-on 2027-01-07 --end-time 19:00$/.test(out), out)
-})
-
-test("the end's zone is ignored when it is the start's, and checked when it is not", function() {
-  var args = build({ title: "X", date: "2027-01-05", startTime: "10:00", endTime: "11:00",
-    timeZone: "Europe/Berlin", endTimeZone: "Europe/Berlin" }).command
-  assert.strictEqual(args[0], "timeout")
-  assert.ok(Hey.validateEvent({ title: "X", date: "2027-01-05", startTime: "10:00", endTime: "11:00",
-    timeZone: "Europe/Berlin", endTimeZone: "Nowhere" }).error)
-  // No end time: an hour after the start, whatever the end's zone says.
-  args = build({ title: "X", date: "2027-01-05", startTime: "10:00", timeZone: "Europe/Berlin", endTimeZone: "Asia/Tokyo" }).command
-  assert.strictEqual(args[0], "timeout")
+test("timed events require known zones, but all-day events need none", function() {
+  ;["", "Berlin", "--help"].forEach(function(zone) {
+    assert.ok(build({ title: "X", date: "2026-09-30", startTime: "18:30", timeZone: zone }).error)
+  })
+  assert.ok(!build({ title: "Holiday", date: "2026-09-30", allDay: true, timeZone: "" }).error)
+  assert.strictEqual(build({ title: "Call", date: "2026-09-30", startTime: "9", timeZone: "America/New_York" }).request.timeZone, "America/New_York")
+  assert.ok(build({ title: "X", date: "2027-01-05", startTime: "10:00", endTime: "11:00", endTimeZone: "Nowhere" }).error)
 })
 
 // ---- Places
@@ -582,7 +533,7 @@ test("no field in OmaCal is a Qt text input", function() {
   var fs = require("fs")
   var path = require("path")
   var dir = path.join(__dirname, "..")
-  fs.readdirSync(dir).filter(function(f) { return /\.qml$/.test(f) && f !== "KeyField.qml" }).forEach(function(f) {
+  fs.readdirSync(dir).filter(function(f) { return /\.qml$/.test(f) }).forEach(function(f) {
     var source = fs.readFileSync(path.join(dir, f), "utf8").replace(/\/\/.*$/gm, "")
     assert.ok(!/\b(TextField|TextInput|TextEdit|TextArea)\s*\{/.test(source), f + " has a Qt text input")
   })
@@ -596,11 +547,6 @@ function edit(event, change, scope, occurrences) {
   return Hey.editRequest(event, before, after, scope || "all", occurrences !== false)
 }
 
-function flag(args, name) {
-  var i = args.indexOf(name)
-  return i === -1 ? undefined : args[i + 1]
-}
-
 test("the edit form opens on the event as it is, and saving it unchanged sends nothing", function() {
   var e = timed(41, "Palestra", 2026, 9, 30, 18, 30, 90, { location: "Evo", calendar_id: 7, reminder_leads: [1800] })
   var values = Hey.eventFormValues(e, "Europe/Berlin")
@@ -612,50 +558,36 @@ test("the edit form opens on the event as it is, and saving it unchanged sends n
   assert.ok(edit(e, {}).unchanged)
 })
 
-test("an edit sends only what changed", function() {
+test("an edit requests only what changed", function() {
   var e = timed(41, "Palestra", 2026, 9, 30, 18, 30, 90, { location: "Evo", calendar_id: 7, reminder_leads: [1800] })
-  var args = Backend.editCommand(edit(e, { title: "Gym" }).request)
-  assert.deepStrictEqual(args.slice(4, 8), ["hey", "event", "edit", "41"])
-  assert.strictEqual(flag(args, "--title"), "Gym")
-  assert.strictEqual(args.indexOf("--start-time"), -1)
-  assert.strictEqual(args.indexOf("--remind"), -1)
-  assert.strictEqual(args.indexOf("--location"), -1)
+  assert.deepStrictEqual(edit(e, { title: "Gym" }).request.changes, { title: "Gym" })
 })
 
-test("a new time is sent with its day and zone, so hey-cli never reads it as UTC", function() {
+test("a new time carries its date and zone", function() {
   var e = timed(41, "Palestra", 2026, 9, 30, 18, 30, 90)
-  var args = Backend.editCommand(edit(e, { startTime: "19:00", endTime: "20:30" }).request)
-  assert.strictEqual(flag(args, "--start-time"), "19:00")
-  assert.strictEqual(flag(args, "--end-time"), "20:30")
-  assert.strictEqual(flag(args, "--time-zone"), "Europe/Berlin")
-  assert.strictEqual(flag(args, "--starts-on"), "2026-09-30")
-  assert.strictEqual(flag(args, "--ends-on"), "2026-09-30")
+  var flags = Api.editFlags(edit(e, { startTime: "19:00", endTime: "20:30" }).request.changes)
+  assert.strictEqual(flags.startTime, "19:00")
+  assert.strictEqual(flags.endTime, "20:30")
+  assert.strictEqual(flags.timeZone, "Europe/Berlin")
+  assert.strictEqual(flags.startsOn, "2026-09-30")
+  assert.strictEqual(flags.endsOn, "2026-09-30")
 })
 
-test("an overnight event keeps its end on the next day", function() {
+test("overnight and multi-day events retain their spans when edited", function() {
   var e = timed(42, "Night train", 2026, 9, 30, 22, 0, 180)
-  var values = Hey.eventFormValues(e, "Europe/Berlin")
-  assert.strictEqual(values.endTime, "01:00")
-  var args = Backend.editCommand(edit(e, { title: "Sleeper" , startTime: "22:30" }).request)
-  assert.strictEqual(flag(args, "--ends-on"), "2026-10-01")
-})
-
-test("a multi-day all-day event moves as a whole", function() {
-  var e = allDay(43, "Lisbon", "2026-10-13", "2026-10-16")
-  var values = Hey.eventFormValues(e, "Europe/Berlin")
-  assert.strictEqual(values.spanDays, 3)
-  var args = Backend.editCommand(edit(e, { date: "2026-10-20" }).request)
-  assert.ok(args.indexOf("--all-day") !== -1)
-  assert.strictEqual(flag(args, "--starts-on"), "2026-10-20")
-  assert.strictEqual(flag(args, "--ends-on"), "2026-10-23")
-})
-
-test("a timed event can be stretched over more days", function() {
-  var e = timed(45, "Offsite", 2026, 10, 16, 9, 0, 480)
-  var args = Backend.editCommand(edit(e, { spanDays: 2 }).request)
-  assert.strictEqual(flag(args, "--starts-on"), "2026-10-16")
-  assert.strictEqual(flag(args, "--ends-on"), "2026-10-18")
-  assert.strictEqual(flag(args, "--end-time"), "17:00")
+  assert.strictEqual(Hey.eventFormValues(e, "Europe/Berlin").endTime, "01:00")
+  assert.strictEqual(Api.editFlags(edit(e, { title: "Sleeper", startTime: "22:30" }).request.changes).endsOn, "2026-10-01")
+  e = allDay(43, "Lisbon", "2026-10-13", "2026-10-16")
+  assert.strictEqual(Hey.eventFormValues(e, "Europe/Berlin").spanDays, 3)
+  var flags = Api.editFlags(edit(e, { date: "2026-10-20" }).request.changes)
+  assert.strictEqual(flags.allDay, true)
+  assert.strictEqual(flags.startsOn, "2026-10-20")
+  assert.strictEqual(flags.endsOn, "2026-10-23")
+  e = timed(45, "Offsite", 2026, 10, 16, 9, 0, 480)
+  flags = Api.editFlags(edit(e, { spanDays: 2 }).request.changes)
+  assert.strictEqual(flags.startsOn, "2026-10-16")
+  assert.strictEqual(flags.endsOn, "2026-10-18")
+  assert.strictEqual(flags.endTime, "17:00")
 })
 
 test("reminders the form cannot show are kept, and cannot be cleared", function() {
@@ -663,38 +595,23 @@ test("reminders the form cannot show are kept, and cannot be cleared", function(
   assert.strictEqual(Hey.eventFormValues(e, "Europe/Berlin").remind, "keep")
   assert.ok(edit(e, { title: "Flight home" }).request.changes.remind === undefined)
   assert.ok(edit(e, { remind: "" }).error)
-  assert.strictEqual(flag(Backend.editCommand(edit(e, { remind: "1h" }).request), "--remind"), "1h")
+  assert.deepStrictEqual(Api.editFlags(edit(e, { remind: "1h" }).request.changes).reminders, [3600])
 })
 
 test("one day of a series is edited by occurrence, the whole series by its id", function() {
   var day = timed(45, "Standup", 2026, 10, 5, 9, 30, 15, { recurring: true, occurrence_id: "45_2026-10-05" })
-  var args = Backend.editCommand(edit(day, { startTime: "10:00", endTime: "10:15" }, "one").request)
-  assert.deepStrictEqual(args.slice(7, 12), ["45", "--occurrence", "45_2026-10-05", "--apply-to", "current"])
-  args = Backend.editCommand(edit(day, { startTime: "10:00", endTime: "10:15" }, "all").request)
-  assert.strictEqual(args[7], "45")
-  assert.strictEqual(args.indexOf("--occurrence"), -1)
-  assert.strictEqual(args.indexOf("--starts-on"), -1, "a series keeps the day it began")
+  assert.deepStrictEqual(Api.editTarget(edit(day, { startTime: "10:00", endTime: "10:15" }, "one").request),
+    { id: "45", occurrence: "45_2026-10-05", date: "2026-10-05" })
+  var all = edit(day, { startTime: "10:00", endTime: "10:15" }, "all").request
+  assert.deepStrictEqual(Api.editTarget(all), { id: "45" })
+  assert.strictEqual(Api.editFlags(all.changes).startsOn, undefined, "a series keeps the day it began")
   assert.ok(edit(day, { date: "2026-10-06" }, "all").error)
-  assert.ok(edit(day, { title: "X" }, "one", false).error, "old hey-cli cannot edit one day")
 })
 
-test("a day HEY wrote out on its own is edited by its own id", function() {
+test("a realized occurrence is edited by its own id", function() {
   var day = timed(46, "Standup", 2026, 10, 6, 9, 30, 15, { recurring: true, parent_id: 45, occurrence_id: "45_2026-10-06" })
-  var args = Backend.editCommand(edit(day, { title: "Standup (moved)" }, "one").request)
-  assert.strictEqual(args[7], "46")
-  assert.strictEqual(args.indexOf("--occurrence"), -1)
-  assert.strictEqual(Backend.editCommand(edit(day, { title: "All standups" }, "all").request)[7], "45")
-})
-
-test("hey-cli from 1.6.0 edits single days of a series", function() {
-  assert.strictEqual(Backend.editsOccurrences("1.5.0"), false)
-  assert.strictEqual(Backend.editsOccurrences("1.6.0"), true)
-  assert.strictEqual(Backend.editsOccurrences("1.7.0"), true)
-})
-
-test("an all-day event needs no zone and sends none", function() {
-  var args = build({ title: "Holiday", date: "2026-09-30", allDay: true, timeZone: "" }).command
-  assert.strictEqual(args.indexOf("--time-zone"), -1)
+  assert.deepStrictEqual(Api.editTarget(edit(day, { title: "Standup (moved)" }, "one").request), { id: "46" })
+  assert.deepStrictEqual(Api.editTarget(edit(day, { title: "All standups" }, "all").request), { id: "45" })
 })
 
 test("the zone list reads the machine's zone and skips aliases", function() {

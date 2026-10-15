@@ -6,4 +6,6 @@ set -e
 cd "$(dirname "$0")"
 for tz in UTC America/Los_Angeles Europe/Berlin Asia/Tokyo Pacific/Kiritimati; do
   TZ=$tz node calendar.test.js
+  TZ=$tz node hey-api.test.js
+  TZ=$tz node time-zones.test.js
 done

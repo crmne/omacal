@@ -30,9 +30,11 @@ plug in as backends (see [Backends](#backends)).
   without one (see [What it runs](#what-it-runs)).
 - **Edit events right here.** Clicking an event (or `E`, or its number
   `1` to `9`) opens it in the same form: change its title, day, times,
-  zones, place, calendar or reminder, and only what you changed is sent to
-  HEY. For a repeating event, choose whether the change is for this day or
-  every day of the series (this day needs hey-cli 1.6.0 or newer). Join
+  zones, place, calendar or reminder. Existing reminders, links, attached
+  emails and countdowns are carried forward. Note text is kept, but its
+  formatting is lost because HEY's API returns only plain text. For a
+  repeating event, choose whether the change is for this day or
+  every day of the series. Join
   and Open in HEY are at the top, for the meeting and for what the form
   does not cover: notes, guests and repeats.
 - **Quick add from anywhere.** **Alt+Shift+Space** opens the same form as a
@@ -123,12 +125,22 @@ touches nothing in your calendar.
 
 ## What it runs
 
-Everything that reads or writes your calendar goes through the backend's
-command-line tool, and OmaCal holds no calendar credentials. For HEY:
-`hey event week` or `hey event list`, `hey calendar list`, `hey event add`,
-`edit` and `delete`, `hey timetrack`, and a long-running `hey watch` for live
-sync. Every call is bounded by `timeout` and `head -c`, and takes its input
-as arguments, never as shell text. Event text is length-capped and drawn as
+Calendar reads use `hey event week` or `hey event list`, `hey calendar
+list`, `hey timetrack`, and a long-running `hey watch` for live sync.
+Deleting events or tracks and starting or stopping the tracker also use
+hey-cli, with IDs only. Event creation and editing, and track renaming,
+use HEY's HTTP API directly: titles, places and track names are request
+bodies, so they never appear in process arguments. Before each write,
+`hey config show` supplies the server address and `hey auth token` supplies
+a token over stdout. The token stays in memory and is sent in the
+Authorization header over HTTPS; it is never saved or logged. A rejected
+token is refreshed once with `hey auth refresh`. Local development servers
+may use HTTP on loopback. An edit first reads the event and resends the
+fields HEY would otherwise clear. Time-zone rules come from
+`/usr/share/zoneinfo`, including each end's own zone.
+
+CLI calls and HTTP requests have timeouts, and responses are size-bounded.
+Event text is length-capped and drawn as
 plain text, and only `https` links are handed to `xdg-open`. Reminders are
 sent to the notification daemon over D-Bus by the system `python3` (with
 PyGObject, part of Omarchy), which gets the event's title, calendar, place
@@ -136,8 +148,7 @@ and link in its environment rather than its arguments, so other users on the
 machine cannot read them from the process list. `hyprctl` binds the
 quick-add shortcut.
 
-The one network request OmaCal makes itself is the place lookup behind the
-form's **Where?** field, and only while you type in it: what you have typed,
+The form's **Where?** field also makes place lookups while you type: what you have typed,
 a moment after you stop, and nothing else. Without a key it goes to
 OpenStreetMap through [Komoot's public Photon server](https://photon.komoot.io)
 (free, no account, results under the OpenStreetMap licence). With a Google
@@ -221,18 +232,22 @@ HEY, a click away from the form. An edited event's times are shown on this
 machine's clock, and saving new times writes them in the zones the form
 shows.
 
-HEY keeps a zone for each end of an event, but `hey event add` takes one
-`--time-zone` for both. An end given its own zone is saved at the right
-moment, moved onto the start's clock, so HEY shows it in the start's zone.
+HEY returns event notes as plain text. Editing an event preserves that text
+but loses its original formatting. Use HEY to edit an event whose note
+formatting must stay intact. If a countdown or an ambiguous stored time
+cannot be carried forward safely, OmaCal asks you to edit in HEY.
+
+The text fields support typing, keyboard selection and explicit paste,
+but do not yet support compose/dead keys, IME input or mouse selection.
 
 ## Backends
 
-A backend is one file in `backends/`: the command lines that read and write
+A backend supplies the commands and API requests that read and write
 a calendar service, a probe that says whether (and how) it can run, and the
 capabilities it has (`create`, `delete`, `watch`, `timeTracking`,
 `dayLink`). The panel hides what a backend cannot do.
 
-Backends never parse. Every command prints the standard JSON shapes
+Read commands print the standard JSON shapes
 documented at the top of `Calendar.js` (events per week or per span,
 calendars, time tracks), so everything after the command is shared: the
 grid, the day view, repeats, the bar, reminders and notifications. Colors
@@ -243,7 +258,8 @@ the natural next ones.
 ## Develop
 
 ```bash
-tests/run                  # Calendar.js and the HEY backend, in five timezones
+tests/run                  # Calendar, HTTP payloads and time zones, in five zones
+gpu-lock node tests/transport/run.js  # Optional QML transport check with a local fake HEY
 omarchy plugin validate .
 ```
 

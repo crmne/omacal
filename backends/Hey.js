@@ -1,5 +1,8 @@
-// The HEY backend: what OmaCal runs to read and write a HEY calendar, all
-// of it through the HEY CLI (https://github.com/basecamp/hey-cli).
+// The HEY backend: what OmaCal runs to read and write a HEY calendar
+// through the HEY CLI (https://github.com/basecamp/hey-cli). The writes that
+// carry what you typed (an event's title and place, a track's name) go to
+// HEY's API instead, with the token hey-cli hands over (HeyApi.js), so none
+// of it is ever on a command line. The writes here carry ids only.
 //
 // A backend is a file of command lines and a few facts about itself. It
 // never parses anything: every command prints the standard shapes
@@ -215,113 +218,8 @@ function isWatchChange(line) {
 // Writing events
 // ---------------------------------------------------------------------------
 
-// `request` is Calendar.validateEvent's output: already checked, times as
-// HH:MM, the end date worked out. The command is an argv, never a shell
-// line, so a title can hold any character it likes.
-function createCommand(request) {
-  var r = request || {}
-  var args = ["timeout", "-k", "3", "30", "hey", "event", "add", "--title", r.title, "--starts-on", r.date]
-  var across = false
-  if (r.allDay) {
-    args.push("--all-day")
-    if (r.endDate && r.endDate !== r.date) args.push("--ends-on", r.endDate)
-  } else {
-    // Every hey-cli from 1.3.0 takes --time-zone; without it the clock
-    // times land in UTC or the HEY account's zone (see Calendar.js).
-    args.push("--start-time", r.startTime, "--time-zone", r.timeZone)
-    across = !!r.endTime && !!r.endTimeZone && r.endTimeZone !== r.timeZone
-    if (!across) {
-      if (r.endDate && r.endDate !== r.date) args.push("--ends-on", r.endDate)
-      if (r.endTime) args.push("--end-time", r.endTime)
-    }
-  }
-  if (Number(r.calendarId) > 0) args.push("--calendar", String(Math.round(Number(r.calendarId))))
-  if (r.location) args.push("--location", r.location)
-  if (r.remind) args.push("--remind", r.remind)
-  args.push("--json")
-  if (!across) return args
-  return ["sh", "-c", acrossZonesScript, "sh", r.timeZone, r.date, r.startTime, r.endTimeZone, r.endTime,
-    r.endDate || r.date].concat(args)
-}
-
-// HEY keeps a zone for each end of an event, but `hey event add` takes one
-// --time-zone for both. An end on another clock (a flight from Berlin at
-// 10:00 to New York at 13:00) is moved onto the start's with GNU date: the
-// same instant, as the start's zone reads it. The end's day is the one the
-// form gave, or else the first on which it falls after the start. HEY then
-// shows that end on the start's clock.
-// Arguments: start zone, start day, start time, end zone, end time, end
-// day, then the hey command. Answers in HEY's JSON envelope when it cannot.
-var acrossZonesScript =
-  "tz=$1 day=$2 start=$3 ez=$4 et=$5 eday=$6; shift 6; " +
-  "fail() { printf '{\"ok\":false,\"error\":\"%s\"}\\n' \"$1\"; exit 1; }; " +
-  "s=$(TZ=$tz date -d \"$day $start\" +%s) || fail 'Could not read the start time.'; " +
-  "e=$(TZ=$ez date -d \"$eday $et\" +%s) || fail 'Could not read the end time.'; " +
-  "if [ \"$e\" -le \"$s\" ] && [ \"$eday\" = \"$day\" ]; then " +
-  "next=$(date -d \"$day +1 day\" +%F) && e=$(TZ=$ez date -d \"$next $et\" +%s) || fail 'Could not read the end time.'; fi; " +
-  "[ \"$e\" -gt \"$s\" ] || fail 'It has to end after it starts.'; " +
-  "end=$(TZ=$tz date -d \"@$e\" '+%F %H:%M') || fail 'Could not read the end time.'; " +
-  "exec \"$@\" --ends-on \"${end% *}\" --end-time \"${end#* }\""
-
-// hey-cli edits one day of a series with --occurrence from 1.6.0 on;
-// before that, `hey event edit` takes a series whole.
-var occurrenceCliVersion = [1, 6, 0]
-
-function editsOccurrences(version) {
-  var parsed = parseCliVersion(version)
-  return parsed === null ? String(version || "") === "" : compareVersions(parsed, occurrenceCliVersion) >= 0
-}
-
-// `request` is Calendar.editRequest's: { event, scope, changes }. Only the
-// changed fields become flags; `hey event edit` reads the event and sends
-// the rest back as it was. Empty when the event cannot be named safely.
-function editCommand(request) {
-  var r = request || {}
-  var event = r.event || {}
-  var changes = r.changes || {}
-  var id = /^\d+$/.test(String(event.seriesId || "")) ? String(event.seriesId) : ""
-  var parent = /^\d+$/.test(String(event.parentId || "")) ? String(event.parentId) : ""
-  var occurrence = /^[0-9A-Za-z_-]+$/.test(String(event.occurrenceId || "")) ? String(event.occurrenceId) : ""
-  var target = []
-  if (!event.recurring) target = id ? [id] : []
-  else if (r.scope === "one") {
-    // A day HEY wrote out edits alone by its own id; any other day is the
-    // series' occurrence.
-    if (parent !== "" && parent !== id && id !== "") target = [id]
-    else if (occurrence !== "") target = [parent || id, "--occurrence", occurrence, "--apply-to", "current"]
-  } else {
-    target = (parent || id) ? [parent || id] : []
-  }
-  if (target.length === 0 || target[0] === "") return []
-
-  var args = ["timeout", "-k", "3", "40", "hey", "event", "edit"].concat(target)
-  if (changes.title !== undefined) args.push("--title", changes.title)
-  if (changes.location !== undefined) args.push("--location", changes.location)
-  if (changes.calendarId) args.push("--calendar", String(Math.round(Number(changes.calendarId))))
-  if (changes.remind) args.push("--remind", changes.remind)
-
-  var s = changes.schedule
-  var across = false
-  if (s) {
-    if (s.allDay) {
-      args.push("--all-day")
-      if (s.dates) args.push("--starts-on", s.date, "--ends-on", s.endDate)
-    } else {
-      if (s.dates) args.push("--starts-on", s.date)
-      args.push("--start-time", s.startTime, "--time-zone", s.timeZone)
-      across = !!s.endTimeZone && s.endTimeZone !== s.timeZone && !!s.endTime
-      if (!across) {
-        if (s.dates) args.push("--ends-on", s.endDate)
-        if (s.endTime) args.push("--end-time", s.endTime)
-      }
-    }
-  }
-  args.push("--json")
-  if (!across) return args
-  return ["sh", "-c", acrossZonesScript, "sh", s.timeZone, s.date, s.startTime, s.endTimeZone, s.endTime,
-    s.endDate || s.date].concat(args)
-}
-
+// Creating and editing are HeyApi.js's. Deleting names the event by its id
+// alone, so it stays with hey-cli.
 function deleteCommand(event) {
   if (!event || event.recurring) return []
   var id = String(event.seriesId || "")
@@ -378,15 +276,6 @@ function trackStopCommand() {
   return ["timeout", "-k", "3", "20", "hey", "timetrack", "stop", "--json"]
 }
 
-// HEY names a track by its category: editing one "files the track under a
-// category title, which HEY creates if it has none by that title".
-function trackRenameCommand(id, name) {
-  var trackId = String(id || "")
-  var title = String(name || "").replace(/^\s+|\s+$/g, "")
-  if (!/^\d+$/.test(trackId) || title === "") return []
-  return ["timeout", "-k", "3", "20", "hey", "timetrack", "edit", trackId, "--category", title.substr(0, 128), "--json"]
-}
-
 function trackDeleteCommand(id) {
   var trackId = String(id || "")
   if (!/^\d+$/.test(trackId)) return []
@@ -416,16 +305,12 @@ if (typeof module !== "undefined") {
     calendarsCommand: calendarsCommand,
     watchCommand: watchCommand,
     isWatchChange: isWatchChange,
-    createCommand: createCommand,
-    editCommand: editCommand,
-    editsOccurrences: editsOccurrences,
     deleteCommand: deleteCommand,
     writeResult: writeResult,
     currentTrackCommand: currentTrackCommand,
     tracksCommand: tracksCommand,
     trackStartCommand: trackStartCommand,
     trackStopCommand: trackStopCommand,
-    trackRenameCommand: trackRenameCommand,
     trackDeleteCommand: trackDeleteCommand,
     dayUrl: dayUrl
   }

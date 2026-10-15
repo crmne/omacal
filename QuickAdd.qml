@@ -10,8 +10,9 @@ import "backends/Hey.js" as Backend
 // the middle of the screen, a shortcut away (Alt+Shift+Space by default).
 // The same EventForm, so it is the same experience as the panel's + button.
 //
-// It talks to the HEY CLI itself rather than through the bar widget, so it
-// works on a screen without a bar. The widget sees the new event through its
+// It talks to HEY itself rather than through the bar widget, so it works on
+// a screen without a bar: the event goes to HEY's API (ApiWriter.qml), so
+// its title and place are never on a command line. The widget sees the new event through its
 // live sync, and remembers the calendar used last through the same
 // `lastCalendarId` setting.
 Item {
@@ -86,20 +87,16 @@ Item {
     }
     if (Number(formValues.calendarId) > 0) rememberCalendar(Number(formValues.calendarId))
     root.error = ""
-    root.busy = true
-    addProcess.finished = false
-    addProcess.command = Backend.createCommand(checked.request)
-    addProcess.running = true
+    root.busy = apiWriter.create(checked.request)
   }
 
-  function finishAdd(exitCode, stdout) {
+  function finishAdd(ok, message) {
     root.busy = false
-    var result = Backend.writeResult(exitCode, stdout)
-    if (result.ok) {
+    if (ok) {
       dismiss()
       return
     }
-    root.error = result.message
+    root.error = message
   }
 
   Process {
@@ -127,20 +124,9 @@ Item {
     }
   }
 
-  Process {
-    id: addProcess
-    running: false
-    command: []
-    property bool finished: false
-    stdout: StdioCollector {
-      onStreamFinished: {
-        addProcess.finished = true
-        root.finishAdd(addProcess.exitCode, text)
-      }
-    }
-    onExited: function(exitCode) {
-      if (!addProcess.finished && root.busy) root.finishAdd(exitCode, "")
-    }
+  ApiWriter {
+    id: apiWriter
+    onFinished: function(ok, message) { root.finishAdd(ok, message) }
   }
 
   PanelWindow {
