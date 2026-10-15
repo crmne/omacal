@@ -311,12 +311,26 @@ ShellRoot {
         form.reset()
       }
       if (phase === 11) {
-        form.titleInput = "Coffee with Alex"
-        form.dayInput = "tomorrow"
+        form.titleInput = "Team offsite"
+        form.dayInput = "fri"
+        form.untilInput = "sun"
         form.startInput = "10:00"
-        form.endInput = "11:00"
-        form.locationInput = "Café Luna"
-        form.calendarId = 3
+        form.endInput = "16:00"
+        form.calendarId = 1
+        // Where?, as typed, with the places it would offer. Suggestions are
+        // switched off first and the list is filled by hand, so the render
+        // never asks a places service and shows made-up places only.
+        form.placeSuggestions = false
+        form.locationInput = "harbour"
+        var places = shell.findByProperty(form, "sessionToken")
+        places.googleKey = ""
+        places.active = true
+        places.results = [
+          { title: "Harbour House", detail: "Kaistraße 12, Hamburg, Germany", value: "Harbour House, Kaistraße 12, Hamburg, Germany" },
+          { title: "Harbour Hall", detail: "Hafenweg 3, Hamburg, Germany", value: "Harbour Hall, Hafenweg 3, Hamburg, Germany" },
+          { title: "Harbour Café", detail: "Am Kai 7, Kiel, Germany", value: "Harbour Café, Am Kai 7, Kiel, Germany" }
+        ]
+        form.placeCursor = 0
       }
       if (phase === 12) shell.save(card, "quick-add.png")
       if (phase === 13) {

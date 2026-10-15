@@ -1,60 +1,47 @@
 #!/usr/bin/env python3
 """Composes preview.png, the marketplace card, from the rendered screenshots.
 
-Run tools/render-screenshots first. Everything on the card is sample data."""
-import subprocess
+Run tools/render-screenshots first. Like hyprmoncfg's, the card is the
+plugin itself rather than words about it: the panel and the quick-add
+form, real renders with sample data, over Omarchy's ristretto wallpaper."""
 from pathlib import Path
-from PIL import Image, ImageDraw, ImageFont, ImageFilter
+from PIL import Image, ImageDraw, ImageEnhance, ImageFilter
 
 repo = Path(__file__).resolve().parent.parent
 shots = repo / "screenshots"
-W, H = 3200, 1800  # 1600x900 at 2x
+wallpaper = Path("/usr/share/omarchy/themes/ristretto/backgrounds/1-color-curves.jpg")
+W, H = 2560, 1600
 
 
-def font(pattern, size):
-    path = subprocess.run(["fc-match", "-f", "%{file}", pattern], capture_output=True, text=True).stdout
-    return ImageFont.truetype(path, size)
+def cover(image, width, height):
+    scale = max(width / image.width, height / image.height)
+    image = image.resize((round(image.width * scale), round(image.height * scale)), Image.LANCZOS)
+    left, top = (image.width - width) // 2, (image.height - height) // 2
+    return image.crop((left, top, left + width, top + height))
 
 
-mono = lambda s: font("JetBrainsMono Nerd Font", s)
-bold = font("Inter:bold", 144)
+def scaled(path, height):
+    image = Image.open(path).convert("RGBA")
+    return image.resize((round(image.width * height / image.height), height), Image.LANCZOS)
 
-# Warm radial glow from the lower left, like OmaTasks' card.
-card = Image.new("RGB", (W, H), "#100c0b")
-glow = Image.new("L", (W, H), 0)
-ImageDraw.Draw(glow).ellipse((-1300, H - 1300, 1300, H + 1300), fill=255)
-glow = glow.filter(ImageFilter.GaussianBlur(420))
-card = Image.composite(Image.new("RGB", (W, H), "#4a2a1f"), card, glow)
-draw = ImageDraw.Draw(card)
 
-draw.text((160, 170), "OMACAL / CRMNE", font=mono(36), fill="#fcb55b", spacing=8)
-draw.multiline_text((152, 300), "Your calendar,\nright in your bar.", font=bold, fill="#eee7e5", spacing=24)
-draw.multiline_text((160, 690), "Omarchy's own calendar, with your days in it.\nHEY first, more calendars to come.",
-                    font=mono(40), fill="#b4a6a1", spacing=22)
-features = [
-    "Per-calendar chips on every day",
-    "See a day, edit an event, HEY style",
-    "Your next event in the bar",
-    "Quick add with Alt + Shift + Space",
-    "Reminders, time tracking, live sync",
-]
-for i, text in enumerate(features):
-    y = 930 + i * 104
-    draw.text((160, y), "•", font=mono(44), fill="#fcb55b")
-    draw.text((210, y + 4), text, font=mono(38), fill="#d0c4bf")
-draw.line((160, 1560, 1860, 1560), fill="#544038", width=2)
-draw.text((160, 1600), "OmaCal. Native to Omarchy.", font=mono(34), fill="#947f75")
+# The wallpaper, softened and dimmed so the windows read first.
+back = cover(Image.open(wallpaper).convert("RGB"), W, H).filter(ImageFilter.GaussianBlur(28))
+card = ImageEnhance.Brightness(back).enhance(0.45).convert("RGBA")
 
-# The rendered panel, scaled to the card's height, with a soft shadow.
-panel = Image.open(shots / "panel.png").convert("RGBA")
-scale = 1640 / panel.height
-panel = panel.resize((round(panel.width * scale), round(panel.height * scale)), Image.LANCZOS)
-px, py = W - panel.width - 170, 80
-shadow = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-ImageDraw.Draw(shadow).rounded_rectangle((px + 20, py + 40, px + panel.width + 20, py + panel.height + 40), 40, fill=(0, 0, 0, 170))
-shadow = shadow.filter(ImageFilter.GaussianBlur(40))
-card = Image.alpha_composite(card.convert("RGBA"), shadow)
-card.alpha_composite(panel, (px, py))
+
+def place(image, x, y):
+    global card
+    shadow = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    ImageDraw.Draw(shadow).rounded_rectangle((x + 16, y + 36, x + image.width + 16, y + image.height + 36), 36, fill=(0, 0, 0, 190))
+    card = Image.alpha_composite(card, shadow.filter(ImageFilter.GaussianBlur(36)))
+    card.alpha_composite(image, (x, y))
+
+
+panel = scaled(shots / "panel.png", 1460)
+form = scaled(shots / "quick-add.png", 1180)
+place(panel, 300, 70)
+place(form, 300 + panel.width - 110, 330)
 
 card.convert("RGB").save(repo / "preview.png", optimize=True)
 print("wrote", repo / "preview.png", card.size)
