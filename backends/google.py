@@ -95,7 +95,7 @@ def credentials():
             result = subprocess.run(["gws", "auth", "export", "--unmasked"], stdin=subprocess.DEVNULL,
                                     stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=15, check=False)
         except FileNotFoundError:
-            raise Failure("gws, the Google Workspace CLI, is not installed. Install it and run "
+            raise Failure("gws, the Google Workspace CLI, is not installed. Install googleworkspace-cli and run "
                           "`gws auth login -s calendar`.", missing=True) from None
         except subprocess.TimeoutExpired:
             raise Failure("gws did not hand over its Google sign-in. Is the keyring unlocked?") from None

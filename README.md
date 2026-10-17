@@ -93,8 +93,8 @@ The screenshots are the real plugin with a made-up calendar
   Omarchy installs, so a stock system works as is.
   - `jq` (part of Omarchy)
 - For Google Calendar: [gws](https://github.com/googleworkspace/cli), the
-  Google Workspace CLI, signed in with Calendar access (see
-  [Google Calendar](#google-calendar))
+  Google Workspace CLI (Arch's `googleworkspace-cli` package), signed in with
+  Calendar access (see [Google Calendar](#google-calendar))
 - For Google Calendar and feeds: `/usr/bin/python3` (part of Omarchy); only
   its standard library is used
 - For reminders: `/usr/bin/python3` with PyGObject (both part of Omarchy)
@@ -126,8 +126,8 @@ OmaCal signs in to Google through [gws](https://github.com/googleworkspace/cli),
 Google's Workspace CLI, so OmaCal stores no Google credentials:
 
 ```bash
-npm install -g @googleworkspace/cli   # or a release binary from GitHub
-gws auth setup                         # once: an OAuth client in your Google Cloud project
+sudo pacman -S googleworkspace-cli   # gws, from Arch's extra repository
+gws auth setup                        # once: an OAuth client in your Google Cloud project
 gws auth login -s calendar
 ```
 

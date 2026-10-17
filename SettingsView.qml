@@ -332,7 +332,7 @@ FocusScope {
       width: parent.width
       label: "Google Calendar"
       description: root.sourceNote("google", "Reads and writes Google Calendar, signed in through gws, the Google Workspace CLI: "
-        + "install it and run `gws auth login -s calendar`.")
+        + "install googleworkspace-cli and run `gws auth login -s calendar`.")
       checked: root.value("googleEnabled", false) === true
       foreground: root.foreground
       fontFamily: root.fontFamily
