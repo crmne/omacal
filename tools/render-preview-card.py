@@ -3,7 +3,12 @@
 
 Run tools/render-screenshots first. Like hyprmoncfg's, the card is the
 plugin itself rather than words about it: the panel and the quick-add
-form, real renders with sample data, over Omarchy's ristretto wallpaper."""
+form, real renders with sample data, over Omarchy's ristretto wallpaper.
+
+The marketplace card shows only a strip from the middle, about 2.7 times as
+wide as it is tall, and the websites crop to 16:9. So the windows are shown
+large and run off the edges, with the panel's date and month grid in the
+middle, where every crop keeps them."""
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageEnhance, ImageFilter
 
@@ -38,10 +43,10 @@ def place(image, x, y):
     card.alpha_composite(image, (x, y))
 
 
-panel = scaled(shots / "panel.png", 1460)
-form = scaled(shots / "quick-add.png", 1180)
-place(panel, 300, 70)
-place(form, 300 + panel.width - 110, 330)
+panel = scaled(shots / "panel.png", round(Image.open(shots / "panel.png").height * 1.1))
+form = scaled(shots / "quick-add.png", round(Image.open(shots / "quick-add.png").height * 1.1))
+place(panel, 150, 300)
+place(form, 150 + panel.width - 140, 470)
 
 card.convert("RGB").save(repo / "preview.png", optimize=True)
 print("wrote", repo / "preview.png", card.size)
