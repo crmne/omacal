@@ -4,8 +4,9 @@ import qs.Commons
 import qs.Ui
 import "Calendar.js" as Cal
 import "Places.js" as Places
+import "backends/Feeds.js" as Feeds
 
-// HEY Calendar's settings, inside the panel. Omarchy keeps a widget's
+// OmaCal's settings, inside the panel. Omarchy keeps a widget's
 // schema but draws no settings screen for it yet, so this is where they are
 // set. Every change is written to the widget's entry in shell.json the
 // moment it is made, the same place the stock settings live.
@@ -98,6 +99,125 @@ FocusScope {
   }
 
   implicitHeight: settingsColumn.implicitHeight
+
+  // ---- Services
+  readonly property var feedContext: ({ dir: Cal.localPath(Qt.resolvedUrl(".")) })
+  property var feeds: []
+  property string feedError: ""
+  property string feedNote: ""
+
+  // What a service's switch says under it: as whom it is read, or what is
+  // wrong, or how to set it up.
+  function sourceNote(id, setup) {
+    if (!root.host || typeof root.host.sourceStatus !== "function") return setup
+    var status = root.host.sourceStatus(id)
+    if (!status.enabled) return setup
+    if (status.ready) return status.account !== "" ? "Reading " + status.account + "." : "Reading."
+    if (status.error !== "") return status.error
+    return "Checking…"
+  }
+
+  // Off in the screenshot harness, which shows sample feeds.
+  property bool loadsFeeds: true
+
+  function loadFeeds() {
+    if (!root.loadsFeeds || feedLister.running) return
+    feedLister.command = Feeds.listCommand(root.feedContext)
+    feedLister.running = true
+  }
+
+  function addFeed() {
+    if (feedWriter.running) return
+    var url = feedUrlField.text.replace(/^\s+|\s+$/g, "")
+    if (!Feeds.isFeedAddress(url)) {
+      root.feedError = "Paste a calendar address that starts with https:// or webcal://."
+      return
+    }
+    root.feedError = ""
+    root.feedNote = "Reading the feed…"
+    var write = Feeds.addCommand(feedNameField.text, url, root.feedContext)
+    feedWriter.run(write.command, write.input)
+  }
+
+  function removeFeed(id) {
+    if (feedWriter.running) return
+    var write = Feeds.removeCommand(id, root.feedContext)
+    if (write.command.length === 0) return
+    root.feedError = ""
+    root.feedNote = ""
+    feedWriter.run(write.command, write.input)
+  }
+
+  function feedChangeFinished(ok, message) {
+    if (ok) {
+      feedUrlField.text = ""
+      feedNameField.text = ""
+      root.feedNote = message
+    } else {
+      root.feedNote = ""
+    }
+    root.feedError = ok ? "" : message
+    loadFeeds()
+    if (root.host && typeof root.host.reloadSource === "function") root.host.reloadSource("feeds")
+  }
+
+  onVisibleChanged: if (visible) loadFeeds()
+
+  Process {
+    id: feedLister
+    running: false
+    command: []
+    stdout: StdioCollector {
+      onStreamFinished: {
+        var parsed = Feeds.parseList(text)
+        if (parsed !== null) root.feeds = parsed
+      }
+    }
+  }
+
+  // The address goes to the helper on stdin, never as an argument.
+  Process {
+    id: feedWriter
+    running: false
+    command: []
+    property string input: ""
+    property bool answered: false
+    property var output: null
+    stdinEnabled: true
+    function run(argv, text) {
+      answered = false
+      output = null
+      input = text
+      command = argv
+      stdinEnabled = true
+      running = true
+    }
+    onStarted: {
+      if (input !== "") write(input)
+      input = ""
+      stdinEnabled = false
+    }
+    stdout: StdioCollector {
+      onStreamFinished: feedWriter.output = text
+    }
+    onExited: function(code) {
+      feedAnswer.code = code
+      feedAnswer.restart()
+    }
+  }
+
+  // The output is in by a moment after the helper exits.
+  Timer {
+    id: feedAnswer
+    property int code: 0
+    interval: 150
+    onTriggered: {
+      if (feedWriter.answered) return
+      feedWriter.answered = true
+      var result = Feeds.writeResult(code, feedWriter.output === null ? "" : feedWriter.output)
+      root.feedChangeFinished(result.ok, result.message)
+    }
+  }
 
   // The Google key goes to its own file, mode 600, through stdin, so it is
   // never in shell.json or on a command line. An empty key removes it.
@@ -193,6 +313,134 @@ FocusScope {
         fontSize: Style.font.bodySmall
         onClicked: root.closed()
       }
+    }
+
+    // ---- Services
+    Label { text: "CALENDARS FROM" }
+
+    Toggle {
+      width: parent.width
+      label: "HEY"
+      description: root.sourceNote("hey", "Reads HEY through hey-cli. Run `hey setup` to sign in.")
+      checked: root.value("heyEnabled", true) !== false
+      foreground: root.foreground
+      fontFamily: root.fontFamily
+      onClicked: root.save("heyEnabled", !checked)
+    }
+
+    Toggle {
+      width: parent.width
+      label: "Google Calendar"
+      description: root.sourceNote("google", "Reads and writes Google Calendar, signed in through gws, the Google Workspace CLI: "
+        + "install it and run `gws auth login -s calendar`.")
+      checked: root.value("googleEnabled", false) === true
+      foreground: root.foreground
+      fontFamily: root.fontFamily
+      onClicked: root.save("googleEnabled", !checked)
+    }
+
+    Label { text: "CALENDAR FEEDS" }
+
+    Repeater {
+      model: root.feeds
+
+      Item {
+        required property var modelData
+        width: settingsColumn.width
+        height: Math.max(feedPill.height, feedRemove.implicitHeight)
+
+        Rectangle {
+          id: feedPill
+          anchors.left: parent.left
+          anchors.verticalCenter: parent.verticalCenter
+          width: feedName.implicitWidth + Style.space(20)
+          height: feedName.implicitHeight + Style.space(8)
+          radius: height / 2
+          color: Cal.calendarColor(modelData.color, Color.accent)
+
+          Text {
+            id: feedName
+            anchors.centerIn: parent
+            textFormat: Text.PlainText
+            text: modelData.name
+            color: Cal.calendarInk
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.bodySmall
+          }
+        }
+
+        Text {
+          anchors.left: feedPill.right
+          anchors.leftMargin: Style.space(8)
+          anchors.right: feedRemove.left
+          anchors.rightMargin: Style.space(8)
+          anchors.verticalCenter: parent.verticalCenter
+          textFormat: Text.PlainText
+          elide: Text.ElideRight
+          text: modelData.host
+          color: Qt.darker(root.foreground, 1.6)
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.caption
+        }
+
+        Button {
+          id: feedRemove
+          anchors.right: parent.right
+          anchors.verticalCenter: parent.verticalCenter
+          text: "Remove"
+          focusable: true
+          enabled: !feedWriter.running
+          foreground: root.foreground
+          fontFamily: root.fontFamily
+          fontSize: Style.font.bodySmall
+          onClicked: root.removeFeed(modelData.id)
+        }
+      }
+    }
+
+    Row {
+      spacing: Style.space(8)
+
+      KeyField {
+        id: feedNameField
+        width: Style.space(110)
+        placeholderText: "Name"
+        foreground: root.foreground
+        font.family: root.fontFamily
+        keyHandler: function(event) { if (event.key === Qt.Key_Escape) { root.closed(); event.accepted = true } }
+      }
+
+      KeyField {
+        id: feedUrlField
+        width: Style.space(200)
+        password: true
+        placeholderText: "webcal:// or https:// address"
+        foreground: root.foreground
+        font.family: root.fontFamily
+        onAccepted: if (text !== "") root.addFeed()
+        keyHandler: function(event) { if (event.key === Qt.Key_Escape) { root.closed(); event.accepted = true } }
+      }
+
+      Button {
+        anchors.verticalCenter: parent.verticalCenter
+        text: "Add"
+        bordered: true
+        focusable: true
+        enabled: feedUrlField.text !== "" && !feedWriter.running
+        foreground: root.foreground
+        fontFamily: root.fontFamily
+        fontSize: Style.font.bodySmall
+        onClicked: root.addFeed()
+      }
+    }
+
+    Note {
+      text: root.feedError !== "" ? root.feedError
+        : (root.feedNote !== "" ? root.feedNote
+          : "Any calendar published as an .ics address, read only: a Google calendar's secret address in iCal format, "
+            + "an iCloud or Outlook published calendar, holidays. The address works like a password, so it is kept in "
+            + "~/.config/omacal/feeds.json, readable only by you.")
+      color: root.feedError !== "" ? Color.urgent : Qt.darker(root.foreground, 1.8)
     }
 
     // ---- Bar
@@ -401,7 +649,7 @@ FocusScope {
 
               Text {
                 textFormat: Text.PlainText
-                text: modelData.name
+                text: modelData.label || modelData.name
                 color: parent.parent.shown ? Cal.calendarInk : Qt.darker(root.foreground, 1.6)
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.bodySmall

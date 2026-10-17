@@ -1,11 +1,15 @@
 #!/bin/bash
 # Runs the Calendar.js suite in timezones on both sides of Greenwich and the date
 # line, since all-day placement and multi-day spans are exactly what breaks
-# when a date is read as an instant.
+# when a date is read as an instant. The Google and feed helpers run on the
+# system Python, as OmaCal runs them.
 set -e
 cd "$(dirname "$0")"
 for tz in UTC America/Los_Angeles Europe/Berlin Asia/Tokyo Pacific/Kiritimati; do
   TZ=$tz node calendar.test.js
   TZ=$tz node hey-api.test.js
+  TZ=$tz node backends.test.js
   TZ=$tz node time-zones.test.js
+  TZ=$tz /usr/bin/python3 -I -B test_google.py
+  TZ=$tz /usr/bin/python3 -I -B test_feeds.py
 done

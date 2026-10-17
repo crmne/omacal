@@ -5,9 +5,11 @@ import qs.Commons
 import qs.Ui
 import "Model.js" as Model
 import "Calendar.js" as Cal
-// The calendar service OmaCal reads. One backend is wired in today; a
-// second is a file in backends/ and the choice of which module this is.
-import "backends/Hey.js" as Backend
+// The calendar services OmaCal reads, each a Source: HEY, Google, and the
+// calendar feeds. Time tracking is HEY's own, so it is read from HEY.
+import "backends/Hey.js" as Hey
+import "backends/Google.js" as Google
+import "backends/Feeds.js" as Feeds
 import "backends/HeyApi.js" as Api
 
 // Date/time label for the bar, and the host for the calendar popup.
@@ -19,8 +21,8 @@ import "backends/HeyApi.js" as Api
 // This is Omarchy's stock clock, and it also owns the calendar the popup
 // draws: the weeks on screen, the calendars, the time track under way, and
 // the reminders. It owns them rather than the panel because reminders have
-// to fire with the panel closed. Everything it knows about the calendar
-// service comes through Backend; everything it computes, through Cal.
+// to fire with the panel closed. What it knows about each calendar service
+// comes through that service's Source; everything it computes, through Cal.
 BarWidget {
   id: root
   moduleName: "crmne.omacal"
@@ -44,9 +46,9 @@ BarWidget {
   // The event the bar names in front of the clock, as the macOS menu-bar
   // calendars do. Horizontal bars only: a vertical one has no room.
   readonly property string barEventMode: String(setting("barEvent", "soon"))
-  // Every event inside its alert window (from its earliest HEY reminder
-  // until it ends), most pressing first; the bar names the first and counts
-  // the rest.
+  // Every event inside its alert window (from its earliest reminder until
+  // it ends), most pressing first; the bar names the first and counts the
+  // rest.
   readonly property var shownEvents: Cal.barSelection(barEventMode, events, todayEvents, displayDate.getTime(), alertLeadMinutes)
   readonly property string eventText: Cal.barLabel(shownEvents, displayDate.getTime(), hour24, barEventMode)
   readonly property string displayText: eventText !== ""
@@ -72,25 +74,98 @@ BarWidget {
     ? true
     : (timeFormat === "12" ? false : String(Qt.locale().timeFormat(Locale.ShortFormat)).indexOf("AP") === -1)
 
-  // ---- Calendar state, read by the panel.
-  //
-  // Weeks are cached by their Monday. `events` is every cached week merged,
-  // and `byDay` the same events indexed by the days they touch, which is
-  // what both the month grid and the day view read.
-  property var weekCache: ({})
-  // The backend, and how its probe said to read it (for HEY: "week" on
-  // hey-cli 1.4.0+, "list" on 1.3.x, Omarchy's own package), or "" until
-  // the probe has answered, or when it never will. Nothing is fetched until
-  // this is known.
-  readonly property string backendName: Backend.info.name
-  readonly property var capabilities: Backend.info.capabilities
-  property string backendMode: ""
-  property string backendVersion: ""
-  property bool backendChecked: false
+  // ---- The services. HEY is on unless switched off; Google once switched
+  //      on; the feeds whenever there are any (backends/Feeds.js).
+  readonly property bool heyEnabled: setting("heyEnabled", true) !== false
+  readonly property bool googleEnabled: setting("googleEnabled", false) === true
+  readonly property bool feedsEnabled: setting("feedsEnabled", true) !== false
+  // Where the plugin is, for the backends that run a helper next to their
+  // file.
+  readonly property var sourceContext: ({ dir: Cal.localPath(Qt.resolvedUrl(".")) })
+
+  Source {
+    id: heySource
+    backend: Hey
+    enabled: root.heyEnabled
+    context: root.sourceContext
+    refreshIntervalSec: root.refreshIntervalSec
+    liveSync: root.liveSync
+    keepWeeks: root.baseWeeks().concat(root.visibleWeeks)
+    onUpdated: root.sourceUpdated()
+    onChangedRemotely: changeDebounce.restart()
+  }
+
+  Source {
+    id: googleSource
+    backend: Google
+    enabled: root.googleEnabled
+    context: root.sourceContext
+    refreshIntervalSec: root.refreshIntervalSec
+    liveSync: root.liveSync
+    keepWeeks: root.baseWeeks().concat(root.visibleWeeks)
+    onUpdated: root.sourceUpdated()
+  }
+
+  Source {
+    id: feedSource
+    backend: Feeds
+    enabled: root.feedsEnabled
+    context: root.sourceContext
+    refreshIntervalSec: root.refreshIntervalSec
+    liveSync: root.liveSync
+    keepWeeks: root.baseWeeks().concat(root.visibleWeeks)
+    onUpdated: root.sourceUpdated()
+  }
+
+  readonly property var sources: [heySource, googleSource, feedSource]
+  // Bumped whenever a source changes, so the bindings below that walk the
+  // sources are read again.
+  property int sourcesRevision: 0
+  readonly property var activeSources: {
+    root.sourcesRevision
+    var out = []
+    for (var i = 0; i < root.sources.length; i++) if (root.sources[i].ready) out.push(root.sources[i])
+    return out
+  }
+
+  // ---- What the panel reads, across every source.
+  readonly property bool anySourceReady: activeSources.length > 0
+  // Kept for the panel's "is there anything to write to?" checks: "" until
+  // some service has answered.
+  readonly property string backendMode: anySourceReady ? "ready" : ""
+  readonly property string backendName: {
+    root.sourcesRevision
+    var names = []
+    for (var i = 0; i < root.sources.length; i++)
+      if (root.sources[i].enabled && !root.sources[i].missing) names.push(root.sources[i].name)
+    return names.length > 0 ? names.join(", ") : heySource.name
+  }
+  readonly property var capabilities: {
+    root.sourcesRevision
+    var caps = { create: false, edit: false, delete: false, watch: false, timeTracking: heySource.ready, dayLink: daySource !== null }
+    for (var i = 0; i < root.activeSources.length; i++) {
+      var c = root.activeSources[i].capabilities
+      if (c.create) caps.create = true
+      if (c.edit) caps.edit = true
+      if (c.delete) caps.delete = true
+      if (c.watch) caps.watch = true
+    }
+    return caps
+  }
+  // The service whose web app the "open this day" button goes to: the first
+  // with a page per day.
+  readonly property var daySource: {
+    root.sourcesRevision
+    for (var i = 0; i < root.activeSources.length; i++)
+      if (root.activeSources[i].capabilities.dayLink) return root.activeSources[i]
+    return null
+  }
+  readonly property string dayLinkName: daySource ? daySource.name : ""
+
   property var events: []
   property var byDay: ({})
   property var calendars: []
-  readonly property var writableCalendars: Cal.writableCalendars(calendars)
+  property var writableCalendars: []
   property var timeTrack: null
   // Finished time tracks by day, and the one waiting to be named: set when
   // a Stop lands, so the panel can ask for a name right away.
@@ -98,15 +173,17 @@ BarWidget {
   property var tracksByDay: ({})
   property string renameTrackId: ""
   property real stoppedAt: 0
-  property bool loading: false
+  readonly property bool loading: {
+    root.sourcesRevision
+    for (var i = 0; i < root.sources.length; i++) if (root.sources[i].loading) return true
+    return false
+  }
   // "Nothing on today" and "we have not looked yet" are the same empty list
   // and very different things to put on screen.
   property bool loaded: false
   property string lastError: ""
   // The weeks the panel is showing, so a refresh re-reads what is on screen.
   property var visibleWeeks: []
-  property var queuedWeeks: []
-  property var fetchingWeeks: []
 
   readonly property string todayKey: Cal.keyForDate(displayDate)
   readonly property var todayEvents: byDay[todayKey] || []
@@ -134,18 +211,13 @@ BarWidget {
   }
 
   function refreshCalendar(force) {
-    if (!root.backendChecked) {
-      if (!versionProcess.running) versionProcess.running = true
-      return
-    }
-    if (root.backendMode === "") return
-    requestWeeks(baseWeeks().concat(root.visibleWeeks), force === true)
-    if (!calendarsProcess.running) calendarsProcess.running = true
+    var keys = baseWeeks().concat(root.visibleWeeks)
+    for (var i = 0; i < root.sources.length; i++) root.sources[i].refresh(keys, force === true)
     refreshTimeTrack()
   }
 
   function refreshTimeTrack() {
-    if (!root.capabilities.timeTracking) return
+    if (!heySource.ready) return
     if (!timeTrackProcess.running) timeTrackProcess.running = true
     if (!timeTracksProcess.running) timeTracksProcess.running = true
   }
@@ -164,96 +236,90 @@ BarWidget {
 
   function showWeeks(keys) {
     root.visibleWeeks = keys || []
-    requestWeeks(root.visibleWeeks, false)
+    for (var i = 0; i < root.sources.length; i++)
+      if (root.sources[i].ready) root.sources[i].requestWeeks(root.visibleWeeks, false)
   }
 
-  function weekIsFresh(key) {
-    var entry = root.weekCache[key]
-    return !!entry && entry.events !== null && (Date.now() - entry.at) < root.refreshIntervalSec * 1000
-  }
-
-  function requestWeeks(keys, force) {
-    var wanted = []
-    for (var i = 0; i < keys.length; i++) {
-      var key = keys[i]
-      if (!Cal.isDayKey(key) || wanted.indexOf(key) !== -1) continue
-      if (!force && weekIsFresh(key)) continue
-      wanted.push(key)
+  // A source answered: its probe, its calendars or its weeks. A source that
+  // has just become ready reads what is wanted.
+  function sourceUpdated() {
+    var wasReady = {}
+    for (var i = 0; i < root.activeSources.length; i++) wasReady[root.activeSources[i].sourceId] = true
+    root.sourcesRevision++
+    for (var j = 0; j < root.activeSources.length; j++)
+      if (!wasReady[root.activeSources[j].sourceId]) root.activeSources[j].refresh(baseWeeks().concat(root.visibleWeeks), true)
+    if (heySource.ready && !wasReady.hey) refreshTimeTrack()
+    if (!heySource.ready) {
+      root.timeTrack = null
+      root.timeTracks = []
+      root.tracksByDay = ({})
     }
-    if (wanted.length === 0) return
-
-    if (weekProcess.running) {
-      var queue = root.queuedWeeks.slice()
-      for (var q = 0; q < wanted.length; q++)
-        if (queue.indexOf(wanted[q]) === -1 && root.fetchingWeeks.indexOf(wanted[q]) === -1) queue.push(wanted[q])
-      root.queuedWeeks = queue
-      return
-    }
-
-    root.loading = true
-    root.fetchingWeeks = wanted
-    weekProcess.command = Backend.fetchCommand(root.backendMode, wanted)
-    weekProcess.running = true
-  }
-
-  function applyWeeks(exitCode, stdout) {
-    root.loading = false
-    var parsed = Cal.parseRangeOutput(stdout)
-    var cache = {}
-    for (var key in root.weekCache) cache[key] = root.weekCache[key]
-    var failed = false
-
-    if (parsed === null) {
-      failed = true
-    } else {
-      for (var week in parsed) {
-        if (parsed[week] === null) {
-          failed = true
-          // A week that could not be read keeps what it had, rather than
-          // turning a busy week blank because the network blinked.
-          if (!cache[week]) cache[week] = { events: null, at: 0 }
-        } else {
-          cache[week] = { events: parsed[week], at: Date.now() }
-        }
-      }
-    }
-
-    // Keeps the cache to the weeks anyone is looking at.
-    var keep = baseWeeks().concat(root.visibleWeeks)
-    var keys = Object.keys(cache)
-    if (keys.length > 16) {
-      for (var k = 0; k < keys.length; k++)
-        if (keep.indexOf(keys[k]) === -1) delete cache[keys[k]]
-    }
-
-    // An empty answer is the shape every failure takes here (the CLI is
-    // missing, signed out, or offline), so the panel says so rather than
-    // showing a week that looks clear.
-    root.lastError = failed
-      ? (exitCode === 0 ? root.backendName + " did not answer. Is its CLI signed in?" : root.backendName + " exited with status " + exitCode + ".")
-      : ""
-    root.weekCache = cache
     rebuildIndex()
-    root.loaded = true
-    root.fetchingWeeks = []
-    checkReminders()
-
-    if (root.queuedWeeks.length > 0) {
-      var next = root.queuedWeeks
-      root.queuedWeeks = []
-      requestWeeks(next, true)
-    }
   }
 
   function rebuildIndex() {
-    root.events = Cal.withoutHidden(Cal.mergeWeeks(root.weekCache), root.hiddenCalendars)
+    var all = []
+    var lists = []
+    var errors = []
+    var anyReady = false
+    var allLoaded = true
+    for (var i = 0; i < root.sources.length; i++) {
+      var source = root.sources[i]
+      if (!source.enabled) continue
+      if (source.ready) anyReady = true
+      if (!source.loaded) allLoaded = false
+      all = all.concat(source.mergedEvents())
+      if (source.ready) lists.push({ name: source.name, calendars: source.calendars })
+    }
+    // A source with nothing set up (no feeds) has nothing to say, and HEY,
+    // on by default, says its CLI is missing only when nothing else answers.
+    var speaking = []
+    for (var k = 0; k < root.sources.length; k++) {
+      var s = root.sources[k]
+      if (!s.enabled || s.error === "" || s.quiet || (s.missing && s === heySource && anyReady)) continue
+      speaking.push(s)
+    }
+    for (var e = 0; e < speaking.length; e++)
+      errors.push(speaking.length > 1 || root.activeSources.length > 0 ? speaking[e].name + ": " + speaking[e].error : speaking[e].error)
+    root.events = Cal.withoutHidden(all, root.hiddenCalendars)
     root.byDay = Cal.indexByDay(root.events)
+    root.calendars = Cal.mergeCalendars(lists)
+    // The calendars a new event can go on, labelled as in the full list.
+    root.writableCalendars = Cal.writableCalendars(root.calendars.filter(function(c) {
+      var from = sourceById(c.source)
+      return !!from && from.capabilities.create === true
+    }))
+    root.lastError = errors.join("\n")
+    root.loaded = allLoaded || anyReady
+    checkReminders()
+  }
+
+  function sourceById(id) {
+    for (var i = 0; i < root.sources.length; i++) if (root.sources[i].sourceId === id) return root.sources[i]
+    return null
+  }
+
+  function sourceOf(event) {
+    return event ? sourceById(event.source) : null
   }
 
   // Forgets the cached copy of the weeks a change touched, and re-reads them.
-  function invalidateDay(dayKey) {
-    var week = Cal.weekStartKey(dayKey)
-    requestWeeks([week].concat(root.visibleWeeks), true)
+  function invalidateDay(dayKey, source) {
+    var keys = [Cal.weekStartKey(dayKey)].concat(root.visibleWeeks)
+    if (source) source.invalidate(keys)
+    else for (var i = 0; i < root.activeSources.length; i++) root.activeSources[i].invalidate(keys)
+  }
+
+  // Probes a service again: after its setup changed (a feed added, a
+  // sign-in), so it is read without restarting the shell.
+  function reloadSource(id) {
+    var source = sourceById(id)
+    if (!source || !source.enabled) return
+    source.checked = false
+    source.mode = ""
+    source.weekCache = ({})
+    source.calendars = []
+    source.probe()
   }
 
   // ---- Reminders
@@ -267,8 +333,9 @@ BarWidget {
     for (var key in root.shownReminders) shown[key] = root.shownReminders[key]
     for (var i = 0; i < due.length; i++) {
       shown[due[i].key] = now
+      var source = sourceOf(due[i].event)
       var reminder = Cal.notifyCommand(due[i].event, now, root.hour24,
-        root.dayUrl(Cal.eventDayKeys(due[i].event)[0] || ""), due[i].remindMs)
+        source ? source.dayUrl(Cal.eventDayKeys(due[i].event)[0] || "") : "", due[i].remindMs)
       notifyProcess.command = reminder.command
       notifyProcess.environment = reminder.environment
       notifyProcess.startDetached()
@@ -279,122 +346,157 @@ BarWidget {
     root.shownReminders = shown
   }
 
-  // ---- Writes. Each one re-reads what it changed once HEY has answered.
+  // ---- Writes. Each one goes to the service it belongs to (Writer.qml),
+  //      and re-reads what it changed once that service has answered.
 
   property string writeError: ""
   property bool writing: false
   property string writingDayKey: ""
+  property var writingSource: null
   signal writeFinished(bool ok, string message)
 
-  // The writes that carry ids only (deleting, starting and stopping the
-  // tracker) run hey-cli.
-  function runWrite(command, dayKey) {
-    if (root.writing || !command || command.length === 0) return false
+  function beginWrite(dayKey, source, send) {
+    if (root.writing || writer.running) return false
     root.writeError = ""
     root.writing = true
     root.writingDayKey = dayKey || ""
-    writeProcess.command = command
-    writeProcess.running = true
-    return true
-  }
-
-  // The ones that carry what you typed go to HEY's API from here, so the
-  // text is never on a command line (ApiWriter.qml).
-  function runApiWrite(begin, dayKey) {
-    if (root.writing || apiWriter.running) return false
-    root.writeError = ""
-    root.writing = true
-    root.writingDayKey = dayKey || ""
-    if (!begin()) {
+    root.writingSource = source || null
+    if (!send()) {
       root.writing = false
       return false
     }
     return true
   }
 
-  function finishCliWrite(exitCode, stdout) {
-    var result = Backend.writeResult(exitCode, stdout)
-    finishWrite(result.ok, result.message)
+  function refuseWrite(message) {
+    root.writeError = message
+    root.writeFinished(false, message)
+    return false
   }
 
   function finishWrite(ok, message) {
     root.writing = false
     root.writeError = ok ? "" : message
     if (!ok) root.stoppedAt = 0
-    if (root.writingDayKey !== "") invalidateDay(root.writingDayKey)
+    if (root.writingDayKey !== "") invalidateDay(root.writingDayKey, root.writingSource)
     refreshTimeTrack()
     root.writeFinished(ok, message)
   }
 
   function addEvent(form) {
     var checked = Cal.validateEvent(form)
-    if (checked.error) {
-      root.writeError = checked.error
-      root.writeFinished(false, checked.error)
-      return false
-    }
-    return runApiWrite(function() { return apiWriter.create(checked.request) }, form.date)
+    if (checked.error) return refuseWrite(checked.error)
+    var source = sourceById(checked.request.source)
+    if (!source || !source.ready || !source.capabilities.create)
+      return refuseWrite("Pick a calendar to put the event on.")
+    if (source === heySource)
+      return beginWrite(form.date, source, function() { return writer.heyCreate(checked.request) })
+    var write = source.backend.writeCommand("create", checked.request, root.sourceContext)
+    return beginWrite(form.date, source, function() { return writer.run(source.backend, write.command, write.input) })
   }
 
-  // One day of a series can be edited alone: HEY's API takes occurrences.
+  function canEdit(event) {
+    var source = sourceOf(event)
+    return !!source && source.ready && source.capabilities.edit === true && event.editable !== false
+  }
+
+  function canDelete(event) {
+    var source = sourceOf(event)
+    if (!source || !source.ready || !source.capabilities.delete || !event || event.recurring || event.editable === false) return false
+    return source.backend.canDelete(event)
+  }
+
+  // One day of a series can be edited alone: HEY's API and Google's take
+  // occurrences.
   function editsOneDay(event) {
     return Cal.editsOneDay(event, true)
+  }
+
+  // The service an event belongs to, by name, for the form's "Open in".
+  function serviceName(event) {
+    var source = sourceOf(event)
+    return source ? source.name : root.backendName
+  }
+
+  // The calendars an event can be moved to: its own service's.
+  function calendarsFor(event) {
+    if (!event) return root.writableCalendars
+    return root.writableCalendars.filter(function(c) { return c.source === event.source })
   }
 
   // `before` is what the form opened with (Cal.eventFormValues), `form`
   // what it holds now; only the difference is sent.
   function editEvent(event, before, form) {
-    var checked = Cal.editRequest(event, before, form, form.scope, true)
-    if (checked.error) {
-      root.writeError = checked.error
-      root.writeFinished(false, checked.error)
-      return false
-    }
+    var source = sourceOf(event)
+    if (!source || !source.ready) return refuseWrite("OmaCal is not reading that event's calendar right now.")
+    var checked = Cal.editRequest(event, before, form, form.scope, true,
+      { service: source.name, clearsReminders: source.capabilities.clearsReminders === true })
+    if (checked.error) return refuseWrite(checked.error)
     if (checked.unchanged) {
       root.writeError = ""
       root.writeFinished(true, "")
       return true
     }
-    if (Api.editTarget(checked.request) === null) {
-      root.writeError = "OmaCal cannot name that event to " + root.backendName + ". Edit it there."
-      root.writeFinished(false, root.writeError)
-      return false
-    }
     // The day it was on and the day it moves to both need reading again.
     var from = Cal.eventDayKeys(event)
-    if (from.length > 0 && from[0] !== form.date) invalidateDay(from[0])
-    return runApiWrite(function() { return apiWriter.edit(checked.request) }, form.date)
+    if (from.length > 0 && from[0] !== form.date) invalidateDay(from[0], source)
+    if (source === heySource) {
+      if (Api.editTarget(checked.request) === null)
+        return refuseWrite("OmaCal cannot name that event to " + source.name + ". Edit it there.")
+      return beginWrite(form.date, source, function() { return writer.heyEdit(checked.request) })
+    }
+    var write = source.backend.writeCommand("edit", checked.request, root.sourceContext)
+    return beginWrite(form.date, source, function() { return writer.run(source.backend, write.command, write.input) })
   }
 
   function deleteEvent(event, dayKey) {
-    return runWrite(Backend.deleteCommand(event), dayKey)
+    if (!canDelete(event)) return false
+    var source = sourceOf(event)
+    var write = source.backend.writeCommand("delete", { event: event }, root.sourceContext)
+    return beginWrite(dayKey, source, function() { return writer.run(source.backend, write.command, write.input) })
   }
 
   function startTimeTrack() {
-    return runWrite(Backend.trackStartCommand(), "")
+    return beginWrite("", heySource, function() { return writer.run(Hey, Hey.trackStartCommand(), "") })
   }
 
   function stopTimeTrack() {
     root.stoppedAt = Date.now()
-    return runWrite(Backend.trackStopCommand(), "")
+    return beginWrite("", heySource, function() { return writer.run(Hey, Hey.trackStopCommand(), "") })
   }
 
   function renameTimeTrack(id, name) {
     root.renameTrackId = ""
-    return runApiWrite(function() { return apiWriter.renameTrack(id, name) }, "")
+    return beginWrite("", heySource, function() { return writer.heyRenameTrack(id, name) })
   }
 
   function deleteTimeTrack(id) {
-    return runWrite(Backend.trackDeleteCommand(id), "")
+    return beginWrite("", heySource, function() { return writer.run(Hey, Hey.trackDeleteCommand(id), "") })
   }
 
-  // The backend's page for a day, or "" when it has none.
+  // The page for a day in the service that has one, or "".
   function dayUrl(dayKey) {
-    return root.capabilities.dayLink ? Backend.dayUrl(dayKey) : ""
+    return root.daySource ? root.daySource.dayUrl(dayKey) : ""
   }
 
+  // What each service says about which of its calendars are left out.
   function modeNote() {
-    return Backend.modeNote(root.backendMode, root.backendVersion)
+    var notes = []
+    for (var i = 0; i < root.activeSources.length; i++) {
+      var note = root.activeSources[i].modeNote()
+      if (note !== "") notes.push(note)
+    }
+    return notes.join(" ")
+  }
+
+  // The settings' view of one service: whether it is on, answering, and as
+  // whom, or what is wrong.
+  function sourceStatus(id) {
+    root.sourcesRevision
+    var source = sourceById(id)
+    if (!source) return { enabled: false, ready: false, account: "", error: "", name: "" }
+    return { enabled: source.enabled, ready: source.ready, account: source.account, error: source.error,
+      name: source.name, missing: source.missing, checked: source.checked, calendars: source.calendars.length }
   }
 
   function openUrl(url) {
@@ -512,7 +614,7 @@ BarWidget {
     onTriggered: root.refreshCalendar(true)
   }
 
-  // Reminders are checked off the cached events, not off HEY, so this is
+  // Reminders are checked off the cached events, not off the services, so this is
   // cheap enough to run often and lands within seconds of the minute.
   Timer {
     interval: 15000
@@ -532,57 +634,9 @@ BarWidget {
   }
 
   Process {
-    id: weekProcess
-    running: false
-    command: []
-    stdout: StdioCollector {
-      onStreamFinished: root.applyWeeks(weekProcess.exitCode, text)
-    }
-    onExited: function(exitCode) {
-      // A process that dies before its stream finishes never reaches the
-      // collector, so the spinner would stay up forever without this.
-      if (root.loading) root.applyWeeks(exitCode, "")
-    }
-  }
-
-  // Asked once. The answer decides how weeks are read, and a missing or too
-  // old CLI is said plainly in the panel rather than shown as empty days.
-  Process {
-    id: versionProcess
-    running: false
-    command: Backend.probeCommand
-    stdout: StdioCollector {
-      onStreamFinished: {
-        var probed = Backend.probe(text)
-        root.backendVersion = probed.version
-        root.backendMode = probed.mode
-        root.backendChecked = true
-        if (root.backendMode === "") {
-          root.lastError = probed.error
-          root.loaded = true
-          return
-        }
-        root.refreshCalendar(true)
-      }
-    }
-  }
-
-  Process {
-    id: calendarsProcess
-    running: false
-    command: Backend.calendarsCommand
-    stdout: StdioCollector {
-      onStreamFinished: {
-        var parsed = Cal.parseCalendars(text)
-        if (parsed !== null) root.calendars = parsed
-      }
-    }
-  }
-
-  Process {
     id: timeTrackProcess
     running: false
-    command: Backend.currentTrackCommand
+    command: Hey.currentTrackCommand
     stdout: StdioCollector {
       onStreamFinished: {
         var parsed = Cal.parseCurrentTrack(text)
@@ -594,61 +648,23 @@ BarWidget {
   Process {
     id: timeTracksProcess
     running: false
-    command: Backend.tracksCommand
+    command: Hey.tracksCommand
     stdout: StdioCollector {
       onStreamFinished: root.applyTimeTracks(text)
     }
   }
 
-  Process {
-    id: writeProcess
-    running: false
-    command: []
-    property bool finished: false
-    onStarted: finished = false
-    stdout: StdioCollector {
-      onStreamFinished: {
-        writeProcess.finished = true
-        root.finishCliWrite(writeProcess.exitCode, text)
-      }
-    }
-    onExited: function(exitCode) {
-      if (!writeProcess.finished && root.writing) root.finishCliWrite(exitCode, "")
-    }
-  }
-
-  ApiWriter {
-    id: apiWriter
+  Writer {
+    id: writer
     onFinished: function(ok, message) { root.finishWrite(ok, message) }
   }
 
-  // ---- Live sync, for backends that can stream their changes (HEY: `hey
-  //      watch`). Any change re-reads what is on screen, debounced so a burst of edits costs one fetch. The polling
-  //      timer above stays as the fallback for when the watch is down.
+  // Any change a service streams re-reads what is on screen, debounced so a
+  // burst of edits costs one fetch.
   Timer {
     id: changeDebounce
     interval: 1500
     onTriggered: root.refreshCalendar(true)
-  }
-
-  Process {
-    id: watchProcess
-    running: root.liveSync && root.capabilities.watch && root.backendMode !== ""
-    command: Backend.watchCommand
-    stdout: SplitParser {
-      onRead: function(line) {
-        if (Backend.isWatchChange(line)) changeDebounce.restart()
-      }
-    }
-    // A watch that dies (signed out, network gone, CLI upgraded under it)
-    // is restarted after a pause rather than in a tight loop.
-    onExited: if (root.liveSync && root.backendMode !== "") watchRestart.restart()
-  }
-
-  Timer {
-    id: watchRestart
-    interval: 60000
-    onTriggered: if (root.liveSync && root.backendMode !== "" && !watchProcess.running) watchProcess.running = true
   }
 
   Loader {
@@ -689,7 +705,7 @@ BarWidget {
     verticalPadding: 8.75
     // The glyph says "something is close"; hovering says what, and when.
     tooltipText: {
-      if (root.lastError !== "") return "HEY: " + root.lastError
+      if (root.lastError !== "") return root.lastError
       if (!root.loaded) return ""
       if (root.shownEvents.length > 0) {
         var lines = []

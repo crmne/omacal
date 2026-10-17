@@ -16,12 +16,12 @@ import "Calendar.js" as Cal
 // BarWidget.qml owns the bar label and hands this panel the button to
 // anchor against.
 //
-// HEY is laid over the stock calendar rather than beside it. Under each day
-// sits a chip per calendar color, carrying how many of that day's events
-// wear it. Clicking a day selects it, and the day view under the grid shows
-// what is on it the way HEY draws a day, with a button to add an event
-// there. BarWidget.qml owns the HEY data, since reminders have to fire with
-// this panel closed.
+// Your calendars (HEY, Google, feeds) are laid over the stock calendar
+// rather than beside it. Under each day sits a chip per calendar color,
+// carrying how many of that day's events wear it. Clicking a day selects
+// it, and the day view under the grid shows what is on it the way HEY draws
+// a day, with a button to add an event there. BarWidget.qml owns the
+// calendar data, since reminders have to fire with this panel closed.
 Panel {
   id: root
   moduleName: "crmne.omacal"
@@ -80,7 +80,8 @@ Panel {
   readonly property var weekdays: Model.weekdayOrder(weekStart)
   readonly property var weeks: Model.monthGrid(viewYear, viewMonth, weekStart, todayKey)
 
-  // ---- HEY. Everything below reads the host's state; nothing here fetches.
+  // ---- The calendars. Everything below reads the host's state; nothing
+  //      here fetches.
   readonly property var byDay: hostWidget ? hostWidget.byDay : ({})
   readonly property bool hour24: hostWidget ? hostWidget.hour24 === true : true
   // The host's clock ticks every minute, which is what "now" and "past" are
@@ -150,11 +151,12 @@ Panel {
     Qt.callLater(function() { eventForm.reset() })
   }
 
-  // Opens an event in the form, to change it here rather than in HEY.
-  // Without a backend that edits, it opens the event in the service.
+  // Opens an event in the form, to change it here rather than in its
+  // service. One its service will not let OmaCal change (a feed, an
+  // invitation) opens in the service instead.
   function editEvent(event) {
     if (!root.hostWidget || !event) return
-    if (!root.hostWidget.capabilities.edit) {
+    if (!root.canEdit(event)) {
       root.openEvent(event)
       return
     }
@@ -168,6 +170,19 @@ Panel {
     root.composing = true
     var oneDay = root.hostWidget.editsOneDay(event)
     Qt.callLater(function() { eventForm.load(event, values, oneDay) })
+  }
+
+  function canEdit(event) {
+    var host = root.hostWidget
+    if (!host || !event) return false
+    return typeof host.canEdit === "function" ? host.canEdit(event) : host.capabilities.edit === true
+  }
+
+  function canDelete(event) {
+    var host = root.hostWidget
+    if (!host || !event) return false
+    return typeof host.canDelete === "function" ? host.canDelete(event)
+      : (!event.recurring && /^\d+$/.test(String(event.seriesId)))
   }
 
   function openEvent(event) {
@@ -200,7 +215,7 @@ Panel {
       if (root.hostWidget.editEvent(eventForm.editing, eventForm.opened, form)) root.selectDayKeepingForm(form.date)
       return
     }
-    if (Number(form.calendarId) > 0) persistSettings({ lastCalendarId: Number(form.calendarId) })
+    if (String(form.calendarKey || "") !== "") persistSettings({ lastCalendarId: String(form.calendarKey) })
     if (root.hostWidget.addEvent(form)) root.selectDayKeepingForm(form.date)
   }
 
@@ -1141,7 +1156,7 @@ Panel {
                   PanelActionButton {
                     iconText: "󰐕"
                     tooltipText: "New event (N)"
-                    enabled: !!root.hostWidget && root.hostWidget.backendMode !== ""
+                    enabled: !!root.hostWidget && root.hostWidget.writableCalendars.length > 0
                     foreground: root.contentForeground
                     fontFamily: root.contentFontFamily
                     onClicked: root.newEvent()
@@ -1150,7 +1165,7 @@ Panel {
                   PanelActionButton {
                     iconText: "󰏌"
                     visible: !!root.hostWidget && root.hostWidget.capabilities.dayLink
-                    tooltipText: "Open this day in " + (root.hostWidget ? root.hostWidget.backendName : "") + " (O)"
+                    tooltipText: "Open this day in " + (root.hostWidget ? (root.hostWidget.dayLinkName || root.hostWidget.backendName) : "") + " (O)"
                     foreground: root.contentForeground
                     fontFamily: root.contentFontFamily
                     onClicked: root.openSelectedDay()
@@ -1181,13 +1196,15 @@ Panel {
                 width: parent.width
                 dayKey: root.selectedKey
                 todayKey: root.todayKey
-                calendars: root.hostWidget ? root.hostWidget.writableCalendars : []
-                defaultCalendarId: Number(root.setting("lastCalendarId", 0)) || 0
+                calendars: !root.hostWidget ? []
+                  : (typeof root.hostWidget.calendarsFor === "function" ? root.hostWidget.calendarsFor(eventForm.editing) : root.hostWidget.writableCalendars)
+                defaultCalendarKey: Cal.normalizedCalendarKey(root.setting("lastCalendarId", ""))
                 busy: !!root.hostWidget && root.hostWidget.writing
                 error: root.hostWidget ? root.hostWidget.writeError : ""
                 foreground: root.contentForeground
                 fontFamily: root.contentFontFamily
-                serviceName: root.hostWidget ? root.hostWidget.backendName : "HEY"
+                serviceName: !root.hostWidget ? "HEY"
+                  : (eventForm.editing && typeof root.hostWidget.serviceName === "function" ? root.hostWidget.serviceName(eventForm.editing) : root.hostWidget.backendName)
                 placeSuggestions: root.setting("placeSuggestions", true) !== false
                 onSubmitted: function(form) { root.submitEvent(form) }
                 onCanceled: root.cancelComposing()
@@ -1212,13 +1229,15 @@ Panel {
                     foreground: root.contentForeground
                     fontFamily: root.contentFontFamily
                     busy: root.deletingKey === modelData.key
+                    deletable: root.canDelete(modelData)
                     onActivated: root.activateEvent(modelData)
                     onJoinRequested: root.joinEvent(modelData)
                     onDeleteRequested: root.deleteEvent(modelData)
                   }
                 }
 
-                // What an empty day means depends on whether HEY answered.
+                // What an empty day means depends on whether the services
+                // answered.
                 Text {
                   visible: root.selectedEvents.length === 0 || (root.hostWidget && root.hostWidget.lastError !== "")
                   width: parent.width
@@ -1231,6 +1250,7 @@ Panel {
                     if (!host) return ""
                     if (host.lastError !== "") return host.lastError
                     if (!host.loaded) return "Reading " + host.backendName + "…"
+                    if (host.anySourceReady === false) return "No calendar is set up. Open the settings (S) to add one."
                     return root.selectedIsToday ? "Nothing on today." : "Nothing on this day."
                   }
                   color: root.hostWidget && root.hostWidget.lastError !== ""
@@ -1296,7 +1316,7 @@ Panel {
               // ---- HEY's time tracking, on today: one tap to start, one to
               //      stop, and how long it has been running.
               Item {
-                visible: root.selectedIsToday && !root.composing && !!root.hostWidget && root.hostWidget.backendMode !== "" && root.hostWidget.capabilities.timeTracking
+                visible: root.selectedIsToday && !root.composing && !!root.hostWidget && root.hostWidget.capabilities.timeTracking
                 width: parent.width
                 height: visible ? trackButton.implicitHeight : 0
 

@@ -8,8 +8,8 @@ import "Calendar.js" as Cal
 // All-day events, and the middle days of something longer, are HEY's thin
 // pill instead, since there is no time to put above them.
 //
-// Clicking opens the meeting link when there is one and the event in HEY
-// otherwise. A one-off event carries a delete button on hover, which asks
+// Clicking opens the event in the form, or in its service when OmaCal
+// cannot change it there. A one-off event carries a delete button on hover, which asks
 // once before doing anything; a repeating one does not, because deleting by
 // id would take the whole series with it.
 Item {
@@ -35,7 +35,9 @@ Item {
   readonly property bool past: Cal.hasEnded(event, nowMs)
   readonly property bool current: Cal.isNow(event, nowMs)
   readonly property bool declined: Cal.isDeclined(event)
-  readonly property bool deletable: !!event && !event.recurring && /^\d+$/.test(String(event.seriesId))
+  // Whether its service lets OmaCal delete it: the host says (one-off
+  // events only, since deleting by id would take a whole series).
+  property bool deletable: false
   readonly property string timeText: event ? Cal.eventTimeOnDay(event, dayKey, hour24) : ""
   readonly property string metaText: {
     if (!event) return ""

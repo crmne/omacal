@@ -9,6 +9,12 @@
 // Calendar.js reads (see "Backends" at the top of Calendar.js), so adding a
 // calendar service means writing the commands that print them, not new
 // parsing. It is Qt-free and self-contained, so it runs under plain node.
+//
+// What Source.qml asks of every backend: info, probeCommand, probe,
+// fetchCommand, calendarsCommand, modeNote, dayUrl, canDelete,
+// writeCommand and writeResult, and watchCommand with isWatchChange when
+// info says it can watch. A command may be a function of the context
+// (where the plugin is), for backends that run a helper.
 
 var info = {
   id: "hey",
@@ -83,7 +89,7 @@ function formatVersion(version) {
 function probe(output) {
   var text = String(output || "").replace(/^\s+|\s+$/g, "")
   if (text === "")
-    return { mode: "", version: "", error: "The HEY CLI is not installed. Install hey-cli and run `hey setup`." }
+    return { mode: "", version: "", missing: true, error: "The HEY CLI is not installed. Install hey-cli and run `hey setup`." }
   var version = parseCliVersion(text)
   if (version === null) return { mode: "week", version: "", error: "" }
   if (compareVersions(version, minimumCliVersion) < 0)
@@ -227,6 +233,16 @@ function deleteCommand(event) {
   return ["timeout", "-k", "3", "20", "hey", "event", "delete", id, "--json"]
 }
 
+function canDelete(event) {
+  return deleteCommand(event).length > 0
+}
+
+// The writes that go through hey-cli rather than HEY's API: deleting.
+function writeCommand(kind, payload) {
+  if (kind === "delete") return { command: deleteCommand(payload && payload.event), input: "" }
+  return { command: [], input: "" }
+}
+
 // Every write answers with HEY's JSON envelope: { ok, summary | error }.
 function writeResult(exitCode, stdout) {
   var parsed = null
@@ -306,6 +322,8 @@ if (typeof module !== "undefined") {
     watchCommand: watchCommand,
     isWatchChange: isWatchChange,
     deleteCommand: deleteCommand,
+    canDelete: canDelete,
+    writeCommand: writeCommand,
     writeResult: writeResult,
     currentTrackCommand: currentTrackCommand,
     tracksCommand: tracksCommand,

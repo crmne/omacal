@@ -205,9 +205,10 @@ test('no write command can contain event text or time-track names', () => {
   for (const command of commands) assert.ok(!command.join('\n').includes(privateText))
   for (const filename of ['BarWidget.qml', 'QuickAdd.qml']) {
     const source = fs.readFileSync(path.join(__dirname, '..', filename), 'utf8')
-    assert.ok(source.includes('apiWriter.create('))
-    assert.ok(!/Backend\.(createCommand|editCommand|trackRenameCommand)/.test(source))
+    assert.ok(source.includes('writer.heyCreate('))
+    assert.ok(!/(Backend|Hey)\.(createCommand|editCommand|trackRenameCommand)/.test(source))
   }
+  assert.ok(fs.readFileSync(path.join(__dirname, '..', 'Writer.qml'), 'utf8').includes('apiWriter.create('))
 })
 test('session parsing rejects cleartext remote servers and malformed tokens', () => {
   assert.deepEqual(Api.parseSession('\nexample-token'), { baseUrl: 'https://app.hey.com', token: 'example-token' })

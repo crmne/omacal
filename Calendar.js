@@ -19,15 +19,22 @@
 //     {"list": true, "first": KEY, "last": KEY, "error": true}
 //   where an event is { id, title, all_day, starts_at, ends_at (ISO 8601),
 //     calendar, color (a name or #hex), calendar_id, location, url,
-//     join_url, join_title, status, reminders: [ISO 8601...], recurring,
-//     occurrence_id, repeat_kind, repeat_description }; only id, title and
-//     starts_at are required.
+//     join_url, join_title, status, reminders: [ISO 8601...],
+//     reminder_leads: [seconds...], recurring, occurrence_id, parent_id,
+//     repeat_kind, repeat_description, editable }; only id, title and
+//     starts_at are required. An all-day event's ends_at is its last day.
 //
 //   Calendars: [{ id, name, color, kind, owned }]
 //   Time tracks: [{ id, name, named, notes, starts_at, ends_at }]
 //   The track under way: { ok: true, track: { id, name, starts_at } | null }
 //
-// Writes are argv commands built from validateEvent's checked request.
+// Several backends can be read at once (HEY, Google, calendar feeds). Each
+// is a source, named by its backend's id, and what it prints is parsed with
+// that name: an event or calendar carries its `source`, and a calendar is
+// known everywhere by its key, "source:id", so two services' ids never meet.
+//
+// Writes are built from validateEvent's checked request, and go to the
+// backend the calendar belongs to.
 
 var MS_PER_DAY = 86400000
 
@@ -54,15 +61,51 @@ function safeUrl(value) {
   return /^https:\/\/[^\s"'<>\\]+$/.test(text) ? text : ""
 }
 
+// A file:// URL (Qt.resolvedUrl's) as the path it names.
+function localPath(url) {
+  var text = String(url || "").replace(/^file:\/\//, "")
+  try {
+    return decodeURIComponent(text)
+  } catch (e) {
+    return text
+  }
+}
+
 function parseInstant(value) {
   var ms = Date.parse(String(value || ""))
   return isFinite(ms) ? ms : null
 }
 
+// "hey" and "7" are "hey:7": a calendar's name across every source.
+function calendarKey(source, id) {
+  var name = boundedString(source, 32)
+  var raw = boundedString(id, 256)
+  return name !== "" && raw !== "" && raw !== "0" ? name + ":" + raw : ""
+}
+
+// "hey:7" as { source: "hey", id: "7" }. A bare number is a HEY calendar,
+// as OmaCal stored the last one used before there was more than HEY.
+function splitCalendarKey(key) {
+  var text = String(key === undefined || key === null ? "" : key)
+  if (/^[1-9]\d*$/.test(text)) return { source: "hey", id: text }
+  var colon = text.indexOf(":")
+  if (colon <= 0 || colon === text.length - 1) return { source: "", id: "" }
+  return { source: text.substr(0, colon), id: text.substr(colon + 1) }
+}
+
+function normalizedCalendarKey(value) {
+  var parts = splitCalendarKey(value)
+  return calendarKey(parts.source, parts.id)
+}
+
+function eventKey(source, id, startsAt) {
+  return (source ? source + "/" : "") + id + "@" + startsAt
+}
+
 // Titles, locations and calendar names are text somebody else wrote, so every
 // string that reaches a binding is length-capped here and rendered as
-// PlainText there.
-function normalizeEvent(raw) {
+// PlainText there. `source` names the backend the event came from.
+function normalizeEvent(raw, source) {
   if (!raw || typeof raw !== "object") return null
 
   var startsAt = boundedString(raw.starts_at, 64)
@@ -83,24 +126,28 @@ function normalizeEvent(raw) {
     if (isFinite(lead) && lead >= 0) leads.push(Math.round(lead))
   }
 
-  var seriesId = boundedString(raw.id, 32)
-  var occurrenceId = boundedString(raw.occurrence_id, 96)
+  var from = boundedString(source, 32)
+  var seriesId = boundedString(raw.id, 160)
+  var occurrenceId = boundedString(raw.occurrence_id, 160)
+  var calendarId = raw.calendar_id === 0 ? "" : boundedString(raw.calendar_id, 256)
   return {
     // A repeating series shares one id across every day it lands on, so the
     // start is part of the identity: two Mondays of a standup are two rows.
-    key: (occurrenceId || seriesId) + "@" + startsAt,
+    key: eventKey(from, occurrenceId || seriesId, startsAt),
+    source: from,
     seriesId: seriesId,
     occurrenceId: occurrenceId,
     // A day of a series that HEY has written out on its own keeps its own
     // id in `id` and the series' here.
-    parentId: boundedString(raw.parent_id, 32),
+    parentId: boundedString(raw.parent_id, 160),
     recurring: raw.recurring === true,
     title: boundedString(raw.title, 256) || "(untitled)",
     allDay: allDay,
     startsAt: startsAt,
     endsAt: boundedString(raw.ends_at, 64) || startsAt,
     location: boundedString(raw.location, 256),
-    calendarId: Number(raw.calendar_id) || 0,
+    calendarId: calendarId,
+    calendarKey: calendarKey(from, calendarId),
     calendar: boundedString(raw.calendar, 128),
     color: boundedString(raw.color, 32).toLowerCase(),
     joinUrl: safeUrl(raw.join_url),
@@ -112,6 +159,9 @@ function normalizeEvent(raw) {
     reminderLeads: leads,
     repeatKind: boundedString(raw.repeat_kind, 32),
     repeatDescription: boundedString(raw.repeat_description, 256),
+    // Whether the service lets you change it: an invitation you are a guest
+    // on, or a calendar you can only read, is not.
+    editable: raw.editable !== false,
     // Resolved once, here, so nothing downstream has to remember that an
     // all-day event is a floating date rather than an instant.
     startMs: allDay ? null : parseInstant(startsAt),
@@ -119,11 +169,11 @@ function normalizeEvent(raw) {
   }
 }
 
-function normalizeEvents(list) {
+function normalizeEvents(list, source) {
   var events = []
   var raw = Array.isArray(list) ? list : []
   for (var i = 0; i < raw.length && events.length < maximumEventCount; i++) {
-    var event = normalizeEvent(raw[i])
+    var event = normalizeEvent(raw[i], source)
     if (event) events.push(event)
   }
   return events
@@ -132,7 +182,7 @@ function normalizeEvents(list) {
 // One line per week: { week, events } or { week, error: true }. Returns a map
 // from week key to its events, with `null` for a week that failed, or null
 // when the output as a whole is unusable.
-function parseRangeOutput(raw) {
+function parseRangeOutput(raw, source) {
   var text = String(raw === undefined || raw === null ? "" : raw)
   if (text.length > cliOutputByteLimit) return null
 
@@ -152,7 +202,7 @@ function parseRangeOutput(raw) {
       found = true
       var listed = parsed.error === true || !Array.isArray(parsed.events)
         ? null
-        : expandAll(normalizeEvents(parsed.events), parsed.first, parsed.last)
+        : expandAll(normalizeEvents(parsed.events, source), parsed.first, parsed.last)
       var spanWeeks = weekKeysBetween(parsed.first, parsed.last)
       var bucketed = listed === null ? null : bucketByWeek(listed, spanWeeks)
       for (var w = 0; w < spanWeeks.length; w++)
@@ -163,12 +213,29 @@ function parseRangeOutput(raw) {
     found = true
     weeks[parsed.week] = parsed.error === true || !Array.isArray(parsed.events)
       ? null
-      : normalizeEvents(parsed.events)
+      : normalizeEvents(parsed.events, source)
   }
   return found ? weeks : null
 }
 
-function parseCalendars(raw) {
+// What a helper said went wrong while reading weeks, from the
+// { ok: false, error } line it adds after the failed weeks, or "".
+function rangeOutputError(raw) {
+  var lines = String(raw === undefined || raw === null ? "" : raw).split("\n")
+  for (var i = 0; i < lines.length && i < 64; i++) {
+    var line = lines[i].replace(/^\s+|\s+$/g, "")
+    if (line.indexOf("\"error\"") === -1) continue
+    try {
+      var parsed = JSON.parse(line)
+      if (parsed && parsed.ok === false && typeof parsed.error === "string") return boundedString(parsed.error, 300)
+    } catch (e) {
+      continue
+    }
+  }
+  return ""
+}
+
+function parseCalendars(raw, source) {
   var text = String(raw === undefined || raw === null ? "" : raw).replace(/^\s+|\s+$/g, "")
   if (text === "") return null
   var parsed
@@ -179,12 +246,16 @@ function parseCalendars(raw) {
   }
   if (!Array.isArray(parsed)) return null
 
+  var from = boundedString(source, 32)
   var calendars = []
   for (var i = 0; i < parsed.length && calendars.length < 100; i++) {
     var c = parsed[i]
-    if (!c || !(Number(c.id) > 0)) continue
+    var id = c ? boundedString(c.id, 256) : ""
+    if (id === "" || id === "0") continue
     calendars.push({
-      id: Number(c.id),
+      id: id,
+      key: calendarKey(from, id),
+      source: from,
       name: boundedString(c.name, 128),
       color: boundedString(c.color, 32).toLowerCase(),
       kind: boundedString(c.kind, 32),
@@ -206,6 +277,33 @@ function writableCalendars(calendars) {
     else normal.push(list[i])
   }
   return normal.concat(maybe)
+}
+
+// Every source's calendars in one list, each with the label the panel shows:
+// its name, and the service's after it where two services share a name
+// ("Personal · Google"). `sources` is [{ name, calendars }], in order.
+function mergeCalendars(sources) {
+  var all = []
+  var counts = {}
+  var list = Array.isArray(sources) ? sources : []
+  for (var s = 0; s < list.length; s++) {
+    var calendars = Array.isArray(list[s].calendars) ? list[s].calendars : []
+    for (var i = 0; i < calendars.length; i++) {
+      var name = String(calendars[i].name).toLowerCase()
+      if (!counts[name]) counts[name] = {}
+      counts[name][s] = true
+      all.push({ calendar: calendars[i], source: s })
+    }
+  }
+  var out = []
+  for (var j = 0; j < all.length; j++) {
+    var copy = {}
+    for (var field in all[j].calendar) copy[field] = all[j].calendar[field]
+    var shared = Object.keys(counts[String(copy.name).toLowerCase()]).length > 1
+    copy.label = shared ? copy.name + " · " + String(list[all[j].source].name || "") : copy.name
+    out.push(copy)
+  }
+  return out
 }
 
 // The track under way, from its standard shape: the track, null when
@@ -377,7 +475,7 @@ function shiftEvent(event, startDate, firstDayKey) {
     copy.endsAt = new Date(copy.endMs).toISOString()
   }
   copy.recurring = true
-  copy.key = event.seriesId + "@" + copy.startsAt
+  copy.key = eventKey(event.source, event.seriesId, copy.startsAt)
   return copy
 }
 
@@ -1277,8 +1375,10 @@ function zoneCity(name) {
 }
 
 // Checks the new-event form and turns it into the request a backend's
-// createCommand takes: { title, date, allDay, startTime, endTime, endDate,
-// timeZone, endTimeZone, calendarId, location, remind }, times as HH:MM.
+// writer takes: { title, date, allDay, startTime, endTime, endDate,
+// timeZone, endTimeZone, source, calendarId, location, remind }, times as
+// HH:MM. The form names its calendar by key ("google:work@example.com");
+// the request carries the source and that service's own id for it.
 // A timed event must name its zone (the form passes this machine's unless
 // another is picked). The end is in timeZone too, with its date worked out,
 // unless endTimeZone names another: then the end's clock is in that zone,
@@ -1292,8 +1392,16 @@ function validateEvent(form) {
   if (title.length > 256) return { error: "That title is too long." }
   if (!isDayKey(f.date)) return { error: "Pick a day." }
 
+  var source = ""
+  var calendarId = Number(f.calendarId) > 0 ? Math.round(Number(f.calendarId)) : 0
+  if (f.calendarKey !== undefined && f.calendarKey !== null && String(f.calendarKey) !== "") {
+    var named = splitCalendarKey(f.calendarKey)
+    if (named.source === "") return { error: "Pick a calendar." }
+    source = named.source
+    calendarId = named.id
+  }
   var request = { title: title, date: f.date, allDay: f.allDay === true, startTime: "", endTime: "",
-    endDate: f.date, timeZone: "", endTimeZone: "", calendarId: Number(f.calendarId) > 0 ? Math.round(Number(f.calendarId)) : 0,
+    endDate: f.date, timeZone: "", endTimeZone: "", source: source, calendarId: calendarId,
     location: String(f.location || "").replace(/^\s+|\s+$/g, "").substr(0, 256), remind: "" }
 
   // How many days after the start the end falls: the form's "until" day.
@@ -1355,7 +1463,7 @@ var reminderLeadChoices = { 600: "10m", 1800: "30m", 3600: "1h", 86400: "1d" }
 function eventFormValues(event, localZone) {
   if (!event) return null
   var values = { title: event.title, allDay: event.allDay, location: event.location,
-    calendarId: event.calendarId, timeZone: localZone || "", endTimeZone: "",
+    calendarKey: event.calendarKey || "", calendarId: event.calendarId, timeZone: localZone || "", endTimeZone: "",
     startTime: "", endTime: "", date: "", spanDays: 0, remind: "" }
   if (event.allDay) {
     var keys = eventDayKeys(event)
@@ -1389,11 +1497,16 @@ function editsOneDay(event, occurrencesSupported) {
 
 // What an edit changes: the edited form (`after`) against what it opened
 // with (`before`, from eventFormValues). Only what changed is sent, since
-// HEY keeps the rest, the reminders included. `scope` is "one" (this day
-// of a series) or "all" (the whole event or series). Returns { error },
+// the service keeps the rest, the reminders included. `scope` is "one"
+// (this day of a series) or "all" (the whole event or series). `options`
+// says what the event's service can do: { service: its name, clearsReminders:
+// whether an edit can leave it with none }. Returns { error },
 // { unchanged: true } or { request: { event, scope, changes } }.
-function editRequest(event, before, after, scope, occurrencesSupported) {
+function editRequest(event, before, after, scope, occurrencesSupported, options) {
+  var o = options || {}
+  var service = o.service || "HEY"
   if (!event || !before) return { error: "That event is gone. Refresh and try again." }
+  if (event.editable === false) return { error: service + " does not let you change that event here. Open it in " + service + "." }
   var one = scope === "one" && event.recurring
   if (one && !editsOneDay(event, occurrencesSupported))
     return { error: "This hey-cli can only change the whole series. Update it to change one day." }
@@ -1401,20 +1514,23 @@ function editRequest(event, before, after, scope, occurrencesSupported) {
   var checked = validateEvent(after)
   if (checked.error) return checked
   var opened = validateEvent(before)
-  if (opened.error) return { error: "OmaCal could not read that event's times. Edit it in HEY." }
+  if (opened.error) return { error: "OmaCal could not read that event's times. Edit it in " + service + "." }
   var was = opened.request
   var now = checked.request
   var changes = {}
 
   if (now.title !== was.title) changes.title = now.title
   if (now.location !== was.location) changes.location = now.location
-  if (now.calendarId > 0 && now.calendarId !== was.calendarId) changes.calendarId = now.calendarId
+  if (now.source !== was.source && now.source !== "" && was.source !== "")
+    return { error: "OmaCal moves an event only between calendars of one service." }
+  if (now.calendarId && String(now.calendarId) !== "0" && String(now.calendarId) !== String(was.calendarId))
+    changes.calendarId = now.calendarId
 
   var remind = String(after.remind || "")
   if (remind !== String(before.remind || "") && remind !== "keep") {
     // hey-cli sends back what an edit does not name, and has no way to say
     // "none": an event keeps at least the reminders it has.
-    if (remind === "") return { error: "OmaCal cannot remove reminders yet. Turn them off in HEY." }
+    if (remind === "" && !o.clearsReminders) return { error: "OmaCal cannot remove reminders yet. Turn them off in HEY." }
     changes.remind = remind
   }
 
@@ -1423,7 +1539,7 @@ function editRequest(event, before, after, scope, occurrencesSupported) {
     || now.timeZone !== was.timeZone || now.endTimeZone !== was.endTimeZone)
   if (moved || retimed) {
     if (event.recurring && !one && (now.date !== was.date || now.endDate !== was.endDate))
-      return { error: "Move one day of a series at a time, or move the whole series in HEY." }
+      return { error: "Move one day of a series at a time, or move the whole series in " + service + "." }
     if (event.recurring && !one && now.endTimeZone !== "")
       return { error: "Give the end its own zone on one day at a time." }
     changes.schedule = { allDay: now.allDay, date: now.date, endDate: now.endDate,
@@ -1543,12 +1659,18 @@ if (typeof module !== "undefined") {
     isDayKey: isDayKey,
     boundedString: boundedString,
     safeUrl: safeUrl,
+    localPath: localPath,
     parseInstant: parseInstant,
     normalizeEvent: normalizeEvent,
     normalizeEvents: normalizeEvents,
     parseRangeOutput: parseRangeOutput,
+    rangeOutputError: rangeOutputError,
     parseCalendars: parseCalendars,
     writableCalendars: writableCalendars,
+    mergeCalendars: mergeCalendars,
+    calendarKey: calendarKey,
+    splitCalendarKey: splitCalendarKey,
+    normalizedCalendarKey: normalizedCalendarKey,
     parseCurrentTrack: parseCurrentTrack,
     normalizeTimeTrack: normalizeTimeTrack,
     parseTimeTracks: parseTimeTracks,

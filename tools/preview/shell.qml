@@ -90,17 +90,38 @@ ShellRoot {
     timed(40, "Car service", "Personal", "brown", -25, 8, 30, 60),
     timed(41, "Climbing", "Health", "green", -26, 18, 30, 120),
     timed(42, "Team standup", "Work", "blue", -24, 9, 30, 15)
-  ])
+  ], "hey").concat(Cal.normalizeEvents([
+    timed("g1", "Roadmap sync", "Team", "#9fe1e7", 0, 15, 0, 45, { calendar_id: "team@example.com",
+      join_url: "https://meet.google.com/abc-defg-hij", join_title: "Google Meet" }),
+    timed("g2", "Hiring panel", "Team", "#9fe1e7", 1, 11, 0, 60, { calendar_id: "team@example.com" }),
+    timed("g3", "Roadmap sync", "Team", "#9fe1e7", 7, 15, 0, 45, { calendar_id: "team@example.com" })
+  ], "google")).concat(Cal.normalizeEvents([
+    allDay("h1", "Reformation Day", "Holidays", "orange", 15)
+  ], "feeds"))
 
-  readonly property var sampleCalendars: [
-    { id: 1, name: "Work", color: "blue", kind: "normal", owned: true },
-    { id: 2, name: "Family", color: "red", kind: "normal", owned: true },
-    { id: 3, name: "Friends", color: "gold", kind: "normal", owned: true },
-    { id: 4, name: "Health", color: "green", kind: "normal", owned: true },
-    { id: 5, name: "Travel", color: "teal", kind: "normal", owned: true },
-    { id: 6, name: "Hobbies", color: "purple", kind: "normal", owned: true },
-    { id: 7, name: "Personal", color: "brown", kind: "normal", owned: true }
-  ]
+  function sampleCalendarsOf(source, list) {
+    return list.map(function(c) {
+      return { id: String(c.id), key: Cal.calendarKey(source, c.id), source: source, name: c.name,
+        color: c.color, kind: c.kind || "", owned: c.owned === true }
+    })
+  }
+
+  readonly property var sampleCalendars: Cal.mergeCalendars([
+    { name: "HEY", calendars: sampleCalendarsOf("hey", [
+      { id: 1, name: "Work", color: "blue", kind: "normal", owned: true },
+      { id: 2, name: "Family", color: "red", kind: "normal", owned: true },
+      { id: 3, name: "Friends", color: "gold", kind: "normal", owned: true },
+      { id: 4, name: "Health", color: "green", kind: "normal", owned: true },
+      { id: 5, name: "Travel", color: "teal", kind: "normal", owned: true },
+      { id: 6, name: "Hobbies", color: "purple", kind: "normal", owned: true },
+      { id: 7, name: "Personal", color: "brown", kind: "normal", owned: true }]) },
+    { name: "Google", calendars: sampleCalendarsOf("google", [
+      { id: "team@example.com", name: "Team", color: "#9fe1e7", kind: "", owned: true }]) },
+    { name: "Feeds", calendars: sampleCalendarsOf("feeds", [
+      { id: "f0123456789abcdef", name: "Holidays", color: "orange", kind: "feed", owned: false }]) }
+  ])
+  readonly property var sampleWritable: Cal.writableCalendars(sampleCalendars.filter(function(c) { return c.source !== "feeds" }))
+  readonly property var sampleFeeds: [{ id: "f0123456789abcdef", name: "Holidays", color: "orange", host: "calendar.example.com" }]
 
   readonly property var sampleTracks: Cal.parseTimeTracks(JSON.stringify([
     // One track, so the busy sample day still fits the panel on a
@@ -128,13 +149,13 @@ ShellRoot {
 
   QtObject {
     id: host
-    property var settings: ({ id: "crmne.omacal", barEvent: "soon" })
+    property var settings: ({ id: "crmne.omacal", barEvent: "soon", googleEnabled: true })
     property date displayDate: shell.now
     property bool hour24: true
     property var events: shell.sampleEvents
     property var byDay: Cal.indexByDay(shell.sampleEvents)
     property var calendars: shell.sampleCalendars
-    property var writableCalendars: shell.sampleCalendars
+    property var writableCalendars: shell.sampleWritable
     property var timeTrack: null
     property var timeTracks: shell.sampleTracks
     property var tracksByDay: Cal.tracksByDay(shell.sampleTracks)
@@ -144,8 +165,10 @@ ShellRoot {
     property string lastError: ""
     property bool loaded: true
     property bool loading: false
-    property string backendMode: "week"
-    property string backendName: "HEY"
+    property string backendMode: "ready"
+    property string backendName: "HEY, Google, Feeds"
+    property bool anySourceReady: true
+    property string dayLinkName: "HEY"
     property string backendVersion: "1.7.0"
     property var capabilities: ({ create: true, edit: true, delete: true, watch: true, timeTracking: true, dayLink: true })
     signal writeFinished(bool ok, string message)
@@ -157,6 +180,16 @@ ShellRoot {
     function addEvent(form) { return false }
     function editEvent(event, before, form) { return false }
     function editsOneDay(event) { return Cal.editsOneDay(event, true) }
+    function canEdit(event) { return !!event && event.source !== "feeds" }
+    function canDelete(event) { return !!event && !event.recurring && event.source !== "feeds" }
+    function calendarsFor(event) {
+      return event ? shell.sampleWritable.filter(function(c) { return c.source === event.source }) : shell.sampleWritable
+    }
+    function serviceName(event) { return event && event.source === "google" ? "Google" : "HEY" }
+    function sourceStatus(id) {
+      return { enabled: true, ready: true, account: id === "google" ? "sam@example.com" : "", error: "", name: id }
+    }
+    function reloadSource(id) {}
     function deleteEvent(event, key) { return false }
     function startTimeTrack() {}
     function stopTimeTrack() {}
@@ -218,8 +251,8 @@ ShellRoot {
         anchors.fill: parent
         anchors.margins: Style.space(18)
         todayKey: shell.todayKey
-        calendars: shell.sampleCalendars
-        defaultCalendarId: 1
+        calendars: shell.sampleWritable
+        defaultCalendarKey: "hey:1"
         foreground: Color.popups.text
         // A fixed zone list, so the render does not depend on this machine's.
         loadZones: false
@@ -295,7 +328,13 @@ ShellRoot {
         return
       }
       if (phase === 3) shell.save(cardItem, "panel-full.png")
-      if (phase === 4) panel.openSettings()
+      if (phase === 4) {
+        // The feed list is the sample's, never this machine's.
+        var settingsView = shell.findByProperty(panel, "feedContext")
+        settingsView.loadsFeeds = false
+        settingsView.feeds = shell.sampleFeeds
+        panel.openSettings()
+      }
       if (phase === 6) shell.save(cardItem, "settings-full.png")
       if (phase === 7) {
         panel.closeSettings()
@@ -316,7 +355,7 @@ ShellRoot {
         form.untilInput = "sun"
         form.startInput = "10:00"
         form.endInput = "16:00"
-        form.calendarId = 1
+        form.calendarKey = "hey:1"
         // Where?, as typed, with the places it would offer. Suggestions are
         // switched off first and the list is filled by hand, so the render
         // never asks a places service and shows made-up places only.

@@ -4,17 +4,19 @@ import Quickshell.Io
 import Quickshell.Wayland
 import qs.Commons
 import "Calendar.js" as Cal
-import "backends/Hey.js" as Backend
+import "backends/Hey.js" as Hey
+import "backends/Google.js" as Google
 
 // The quick-add card: the calendar panel's new-event form on its own, in
 // the middle of the screen, a shortcut away (Alt+Shift+Space by default).
 // The same EventForm, so it is the same experience as the panel's + button.
 //
-// It talks to HEY itself rather than through the bar widget, so it works on
-// a screen without a bar: the event goes to HEY's API (ApiWriter.qml), so
-// its title and place are never on a command line. The widget sees the new event through its
-// live sync, and remembers the calendar used last through the same
-// `lastCalendarId` setting.
+// It talks to the services itself rather than through the bar widget, so it
+// works on a screen without a bar: the event goes to HEY's API or Google's
+// helper (Writer.qml), so its title and place are never on a command line.
+// The widget sees the new event through its live sync or its next read, and
+// remembers the calendar used last through the same `lastCalendarId`
+// setting.
 Item {
   id: root
 
@@ -27,14 +29,36 @@ Item {
   property var calendars: []
   property bool busy: false
   property string error: ""
-  property string backendMode: ""
+  // Set the first time the card opens: the services are asked from then
+  // on, and not at all on a shell where it never does.
+  property bool wanted: false
+
+  readonly property var sourceContext: ({ dir: Cal.localPath(Qt.resolvedUrl(".")) })
+  readonly property var sources: [heySource, googleSource]
 
   function open(payload) {
     root.error = ""
     root.opened = true
-    if (!calendarsProcess.running) calendarsProcess.running = true
-    if (root.backendMode === "" && !versionProcess.running) versionProcess.running = true
+    root.wanted = true
+    for (var i = 0; i < root.sources.length; i++) root.sources[i].refresh([], false)
     Qt.callLater(function() { form.reset() })
+  }
+
+  function setting(key, fallback) {
+    var entry = widgetEntry()
+    return entry && entry[key] !== undefined && entry[key] !== null ? entry[key] : fallback
+  }
+
+  function updateCalendars() {
+    var lists = []
+    var errors = []
+    for (var i = 0; i < root.sources.length; i++) {
+      var source = root.sources[i]
+      if (source.ready) lists.push({ name: source.name, calendars: source.calendars })
+      else if (source.enabled && source.checked && source.error !== "" && !source.missing) errors.push(source.error)
+    }
+    root.calendars = Cal.writableCalendars(Cal.mergeCalendars(lists))
+    if (root.calendars.length === 0 && errors.length > 0 && !root.busy) root.error = errors.join(" ")
   }
 
   function close() {
@@ -63,18 +87,18 @@ Item {
     return null
   }
 
-  function lastCalendarId() {
+  function lastCalendarKey() {
     var entry = widgetEntry()
-    return entry ? (Number(entry.lastCalendarId) || 0) : 0
+    return entry ? Cal.normalizedCalendarKey(entry.lastCalendarId) : ""
   }
 
-  function rememberCalendar(id) {
+  function rememberCalendar(key) {
     var entry = widgetEntry()
     if (!entry || !root.shell || typeof root.shell.updateEntryInline !== "function") return
-    if (Number(entry.lastCalendarId) === id) return
+    if (String(entry.lastCalendarId) === key) return
     var next = {}
-    for (var key in entry) next[key] = entry[key]
-    next.lastCalendarId = id
+    for (var field in entry) next[field] = entry[field]
+    next.lastCalendarId = key
     root.shell.updateEntryInline(root.moduleName, next)
   }
 
@@ -85,9 +109,19 @@ Item {
       root.error = checked.error
       return
     }
-    if (Number(formValues.calendarId) > 0) rememberCalendar(Number(formValues.calendarId))
+    var source = checked.request.source === "google" ? googleSource : (checked.request.source === "hey" ? heySource : null)
+    if (!source || !source.ready) {
+      root.error = "Pick a calendar to put the event on."
+      return
+    }
+    rememberCalendar(formValues.calendarKey)
     root.error = ""
-    root.busy = apiWriter.create(checked.request)
+    if (source === heySource) {
+      root.busy = writer.heyCreate(checked.request)
+    } else {
+      var write = Google.writeCommand("create", checked.request, root.sourceContext)
+      root.busy = writer.run(Google, write.command, write.input)
+    }
   }
 
   function finishAdd(ok, message) {
@@ -99,33 +133,28 @@ Item {
     root.error = message
   }
 
-  Process {
-    id: versionProcess
-    running: false
-    command: Backend.probeCommand
-    stdout: StdioCollector {
-      onStreamFinished: {
-        var probed = Backend.probe(text)
-        root.backendMode = probed.mode
-        if (root.backendMode === "") root.error = probed.error
-      }
-    }
+  // The services a new event can go to, for their calendars only. They
+  // are asked when the card opens, not before.
+  Source {
+    id: heySource
+    backend: Hey
+    enabled: root.wanted && root.setting("heyEnabled", true) !== false
+    context: root.sourceContext
+    readsWeeks: false
+    onUpdated: root.updateCalendars()
   }
 
-  Process {
-    id: calendarsProcess
-    running: false
-    command: Backend.calendarsCommand
-    stdout: StdioCollector {
-      onStreamFinished: {
-        var parsed = Cal.parseCalendars(text)
-        if (parsed !== null) root.calendars = Cal.writableCalendars(parsed)
-      }
-    }
+  Source {
+    id: googleSource
+    backend: Google
+    enabled: root.wanted && root.setting("googleEnabled", false) === true
+    context: root.sourceContext
+    readsWeeks: false
+    onUpdated: root.updateCalendars()
   }
 
-  ApiWriter {
-    id: apiWriter
+  Writer {
+    id: writer
     onFinished: function(ok, message) { root.finishAdd(ok, message) }
   }
 
@@ -173,7 +202,7 @@ Item {
         anchors.margins: Style.space(18)
         todayKey: Cal.keyForDate(new Date())
         calendars: root.calendars
-        defaultCalendarId: root.lastCalendarId()
+        defaultCalendarKey: root.lastCalendarKey()
         placeSuggestions: { var entry = root.widgetEntry(); return !entry || entry.placeSuggestions !== false }
         busy: root.busy
         error: root.error

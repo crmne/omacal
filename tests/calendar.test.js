@@ -640,6 +640,72 @@ test("repeating events are never deleted by series id", function() {
   assert.deepStrictEqual(Backend.deleteCommand(timed(42, "Once", 2026, 9, 28, 9, 0, 15)).slice(-3), ["delete", "42", "--json"])
 })
 
+// ---- Several services at once
+
+test("a calendar is named by its service and id, and old HEY ids still read", function() {
+  assert.strictEqual(Hey.calendarKey("google", "work@example.com"), "google:work@example.com")
+  assert.strictEqual(Hey.calendarKey("hey", 0), "")
+  assert.deepStrictEqual(Hey.splitCalendarKey("google:a:b@example.com"), { source: "google", id: "a:b@example.com" })
+  assert.deepStrictEqual(Hey.splitCalendarKey(7), { source: "hey", id: "7" })
+  assert.deepStrictEqual(Hey.splitCalendarKey("nonsense"), { source: "", id: "" })
+  assert.strictEqual(Hey.normalizedCalendarKey(3), "hey:3")
+  assert.strictEqual(Hey.normalizedCalendarKey(""), "")
+})
+
+test("the same id from two services is two events and two calendars", function() {
+  var raw = { id: "41", title: "Standup", starts_at: "2026-10-19T09:00:00Z", calendar_id: "7", calendar: "Work" }
+  var a = Hey.normalizeEvent(raw, "hey")
+  var b = Hey.normalizeEvent(raw, "google")
+  assert.notStrictEqual(a.key, b.key)
+  assert.strictEqual(a.calendarKey, "hey:7")
+  assert.strictEqual(b.source, "google")
+  assert.strictEqual(Hey.indexByDay([a, b])[Hey.eventDayKeys(a)[0]].length, 2)
+  var calendars = Hey.parseCalendars('[{"id":"work@example.com","name":"Work","owned":true},{"id":0,"name":"x"}]', "google")
+  assert.strictEqual(calendars.length, 1)
+  assert.strictEqual(calendars[0].key, "google:work@example.com")
+  var long = Hey.normalizeEvent({ id: "abcdefghijklmnopqrstuvwxyz_20261019T090000Z", title: "x", starts_at: "2026-10-19T09:00:00Z" }, "google")
+  assert.strictEqual(long.seriesId, "abcdefghijklmnopqrstuvwxyz_20261019T090000Z")
+})
+
+test("calendars two services share a name are told apart, and only once", function() {
+  var merged = Hey.mergeCalendars([
+    { name: "HEY", calendars: [{ key: "hey:1", name: "Work", owned: true }, { key: "hey:2", name: "Family", owned: true }] },
+    { name: "Google", calendars: [{ key: "google:w", name: "work", owned: true }] }])
+  assert.deepStrictEqual(merged.map(function(c) { return c.label }), ["Work · HEY", "Family", "work · Google"])
+})
+
+test("a new event names its service and that service's id for the calendar", function() {
+  var r = build({ title: "Lunch", date: "2026-10-19", startTime: "13:00", calendarKey: "google:work@example.com" }).request
+  assert.strictEqual(r.source, "google")
+  assert.strictEqual(r.calendarId, "work@example.com")
+  assert.ok(build({ title: "Lunch", date: "2026-10-19", startTime: "13:00", calendarKey: "nonsense" }).error)
+})
+
+test("an edit stays within its service, and says which service to use instead", function() {
+  var e = Hey.normalizeEvent({ id: "g1", title: "Gym", starts_at: new Date(2026, 9, 19, 18).toISOString(),
+    ends_at: new Date(2026, 9, 19, 19).toISOString(), calendar_id: "a@example.com" }, "google")
+  var before = Hey.eventFormValues(e, "Europe/Berlin")
+  assert.strictEqual(before.calendarKey, "google:a@example.com")
+  var moved = Hey.editRequest(e, before, Object.assign({}, before, { calendarKey: "hey:7" }), "all", true, { service: "Google" })
+  assert.ok(/one service/.test(moved.error))
+  var other = Hey.editRequest(e, before, Object.assign({}, before, { calendarKey: "google:b@example.com" }), "all", true, { service: "Google" })
+  assert.strictEqual(other.request.changes.calendarId, "b@example.com")
+  var withReminder = Hey.normalizeEvent({ id: "g2", title: "Call", starts_at: new Date(2026, 9, 19, 18).toISOString(),
+    ends_at: new Date(2026, 9, 19, 19).toISOString(), calendar_id: "a@example.com", reminder_leads: [600] }, "google")
+  var opened = Hey.eventFormValues(withReminder, "Europe/Berlin")
+  assert.ok(Hey.editRequest(withReminder, opened, Object.assign({}, opened, { remind: "" }), "all", true).error)
+  assert.strictEqual(Hey.editRequest(withReminder, opened, Object.assign({}, opened, { remind: "" }), "all", true,
+    { service: "Google", clearsReminders: true }).request.changes.remind, "")
+  var invitation = Hey.normalizeEvent({ id: "g3", title: "Their meeting", starts_at: "2026-10-19T09:00:00Z", editable: false }, "google")
+  assert.ok(/Google/.test(Hey.editRequest(invitation, opened, opened, "all", true, { service: "Google" }).error))
+})
+
+test("a helper's own words for failed weeks reach the panel", function() {
+  assert.strictEqual(Hey.rangeOutputError('{"week":"2026-10-19","error":true}\n{"ok":false,"error":"Run gws auth login."}'), "Run gws auth login.")
+  assert.strictEqual(Hey.rangeOutputError('{"week":"2026-10-19","events":[]}'), "")
+  assert.strictEqual(Hey.localPath("file:///home/me/My%20Plugins/omacal/"), "/home/me/My Plugins/omacal/")
+})
+
 if (failures > 0) {
   console.error(failures + " failed [" + tz + "]")
   process.exit(1)

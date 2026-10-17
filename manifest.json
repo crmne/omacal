@@ -5,7 +5,7 @@
   "version": "1.1.0",
   "author": "Carmine Paolino",
   "license": "MIT",
-  "description": "Omarchy's stock clock and calendar with your calendar laid over it: per-calendar event chips on the month grid, a day view, new events from the panel or a quick-add shortcut, reminders as notifications, the next event in the bar, and time tracking. HEY is the first backend.",
+  "description": "Omarchy's stock clock and calendar with your calendars laid over it: HEY, Google Calendar and .ics feeds side by side, per-calendar event chips on the month grid, a day view, new events from the panel or a quick-add shortcut, reminders as notifications, the next event in the bar, and HEY time tracking.",
   "kinds": [
     "service",
     "bar-widget",
@@ -25,11 +25,16 @@
       "clock",
       "hey",
       "events",
-      "omacal"
+      "omacal",
+      "google",
+      "ics"
     ],
     "allowMultiple": false,
     "defaultSection": "center",
     "defaults": {
+      "heyEnabled": true,
+      "googleEnabled": false,
+      "feedsEnabled": true,
       "alertLeadMinutes": 15,
       "notifications": true,
       "liveSync": true,
@@ -40,6 +45,27 @@
       "placeSuggestions": true
     },
     "schema": [
+      {
+        "key": "heyEnabled",
+        "type": "boolean",
+        "label": "Read HEY",
+        "defaultValue": true,
+        "description": "Reads HEY through hey-cli."
+      },
+      {
+        "key": "googleEnabled",
+        "type": "boolean",
+        "label": "Read Google Calendar",
+        "defaultValue": false,
+        "description": "Reads and writes Google Calendar, signed in through gws, the Google Workspace CLI (`gws auth login -s calendar`)."
+      },
+      {
+        "key": "feedsEnabled",
+        "type": "boolean",
+        "label": "Read calendar feeds",
+        "defaultValue": true,
+        "description": "Reads the .ics feeds added in OmaCal's own settings, which keeps their addresses in ~/.config/omacal/feeds.json."
+      },
       {
         "key": "barEvent",
         "type": "enum",
@@ -57,9 +83,9 @@
       {
         "key": "notifications",
         "type": "boolean",
-        "label": "Show HEY reminders as notifications",
+        "label": "Show event reminders as notifications",
         "defaultValue": true,
-        "description": "Uses the reminders set on each event in HEY."
+        "description": "Uses the reminders set on each event in HEY or Google, and the alarms a feed carries."
       },
       {
         "key": "placeSuggestions",
@@ -102,7 +128,7 @@
         "type": "boolean",
         "label": "Follow HEY changes live",
         "defaultValue": true,
-        "description": "Keeps a `hey watch` running so edits made elsewhere show up within seconds."
+        "description": "Keeps a `hey watch` running so edits made in HEY show up within seconds. Google and feeds are polled at the refresh interval."
       },
       {
         "key": "refreshIntervalSec",
@@ -118,7 +144,7 @@
         "type": "string",
         "label": "Hidden calendars",
         "defaultValue": "",
-        "description": "Comma-separated calendar names to leave out. Needed on hey-cli 1.3, which cannot see which calendars are switched off in HEY."
+        "description": "Comma-separated calendar names to leave out, from every service. Needed on hey-cli 1.3, which cannot see which calendars are switched off in HEY."
       }
     ]
   }

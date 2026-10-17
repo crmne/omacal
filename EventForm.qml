@@ -16,9 +16,9 @@ import "Calendar.js" as Cal
 // As in HEY's own form, a globe shows a zone under each time, the start's
 // and the end's, each a city you can type over ("new york", "tokyo"); the
 // end's follows the start's until it is given its own, for a flight that
-// leaves Berlin at 10:00 and lands in New York at 13:00. The event is
-// created through `hey event add`, so HEY applies its own defaults to
-// anything left blank.
+// leaves Berlin at 10:00 and lands in New York at 13:00. The calendars are
+// every service's that takes new events (HEY's, Google's), and the event
+// goes to the service of the one picked.
 //
 // "Where?" suggests places as it is typed in, as HEY's does: Google's when
 // a Google Maps key is set in the settings, else OpenStreetMap's. Up and
@@ -53,7 +53,8 @@ Item {
   // carries the end with it.
   property string lastStart: ""
   property var calendars: []
-  property int defaultCalendarId: 0
+  // Calendars are named by key, "source:id" (Calendar.js).
+  property string defaultCalendarKey: ""
   property bool busy: false
   // `error` comes from whoever runs the command; `localError` is the form's
   // own complaint about what was typed, and wins while it stands.
@@ -65,7 +66,8 @@ Item {
 
   signal submitted(var form)
   signal canceled()
-  // A link the edit form offers: the event's meeting, or its page in HEY.
+  // A link the edit form offers: the event's meeting, or its page in its
+  // service.
   signal openRequested(string url)
 
   // The fields' text, for filling the form from outside (the screenshot
@@ -81,7 +83,7 @@ Item {
   property alias endZoneInput: endZone.text
   // HEY keeps the zones out of sight until its globe is clicked.
   property bool showZones: false
-  property int calendarId: 0
+  property string calendarKey: ""
   property bool allDay: false
   property string remind: "30m"
 
@@ -113,14 +115,14 @@ Item {
   // another lead), and is offered only while editing an event with them.
   readonly property bool keepsReminders: !!root.opened && root.opened.remind === "keep"
   readonly property var reminderValues: root.keepsReminders ? ["keep", "", "10m", "30m", "1h", "1d"] : ["", "10m", "30m", "1h", "1d"]
-  readonly property var calendarIds: {
-    var ids = []
-    for (var i = 0; i < root.calendars.length; i++) ids.push(root.calendars[i].id)
-    return ids
+  readonly property var calendarKeys: {
+    var keys = []
+    for (var i = 0; i < root.calendars.length; i++) keys.push(root.calendars[i].key)
+    return keys
   }
   readonly property string chosenCalendarName: {
     for (var i = 0; i < root.calendars.length; i++)
-      if (root.calendars[i].id === root.calendarId) return root.calendars[i].name
+      if (root.calendars[i].key === root.calendarKey) return root.calendars[i].label || root.calendars[i].name
     return ""
   }
 
@@ -193,7 +195,7 @@ Item {
     root.allDay = false
     root.remind = "30m"
     root.localError = ""
-    root.calendarId = pickCalendar(root.defaultCalendarId)
+    root.calendarKey = pickCalendar(root.defaultCalendarKey)
     focusTitle()
   }
 
@@ -216,7 +218,7 @@ Item {
     root.remind = values.remind
     // The event's own calendar, even one the form cannot offer (the row
     // then shows none chosen), so saving never moves it by accident.
-    root.calendarId = values.calendarId
+    root.calendarKey = values.calendarKey
   }
 
   function focusTitle() {
@@ -241,8 +243,8 @@ Item {
 
   function pickCalendar(preferred) {
     for (var i = 0; i < root.calendars.length; i++)
-      if (root.calendars[i].id === preferred) return preferred
-    return root.calendars.length > 0 ? root.calendars[0].id : 0
+      if (root.calendars[i].key === preferred) return preferred
+    return root.calendars.length > 0 ? root.calendars[0].key : ""
   }
 
   function submit() {
@@ -268,7 +270,7 @@ Item {
       endTime: endField.text,
       timeZone: root.allDay ? "" : startZone.chosen,
       endTimeZone: root.allDay ? "" : endZone.chosen,
-      calendarId: root.calendarId,
+      calendarKey: root.calendarKey,
       location: locationField.text,
       remind: root.remind,
       spanDays: root.spanDays,
@@ -319,7 +321,7 @@ Item {
   }
 
   function stepCalendar(delta) {
-    root.calendarId = Cal.cycle(root.calendarIds, root.calendarId, delta)
+    root.calendarKey = Cal.cycle(root.calendarKeys, root.calendarKey, delta)
   }
 
   function stepReminder(delta) {
@@ -391,7 +393,7 @@ Item {
     event.accepted = true
   }
 
-  onCalendarsChanged: if (root.calendarId === 0) root.calendarId = pickCalendar(root.defaultCalendarId)
+  onCalendarsChanged: if (root.calendarKey === "" && !root.editing) root.calendarKey = pickCalendar(root.defaultCalendarKey)
   Component.onCompleted: root.lastStart = root.resolvedDay
 
 
@@ -429,8 +431,8 @@ Item {
         font.letterSpacing: 1
       }
 
-      // The meeting to join, and the event in HEY for what the form does not
-      // cover (notes, guests, repeats).
+      // The meeting to join, and the event in its service for what the form
+      // does not cover (notes, guests, repeats).
       Row {
         id: links
         visible: !!root.editing
@@ -553,7 +555,7 @@ Item {
 
         Rectangle {
           required property var modelData
-          readonly property bool chosen: modelData.id === root.calendarId
+          readonly property bool chosen: modelData.key === root.calendarKey
           width: calendarName.implicitWidth + Style.space(20)
           height: calendarName.implicitHeight + Style.space(8)
           radius: height / 2
@@ -566,7 +568,7 @@ Item {
             id: calendarName
             anchors.centerIn: parent
             textFormat: Text.PlainText
-            text: modelData.name
+            text: modelData.label || modelData.name
             color: Cal.calendarInk
             font.family: root.fontFamily
             font.pixelSize: Style.font.bodySmall
@@ -578,7 +580,7 @@ Item {
             anchors.fill: parent
             hoverEnabled: true
             cursorShape: Qt.PointingHandCursor
-            onClicked: root.calendarId = modelData.id
+            onClicked: root.calendarKey = modelData.key
           }
         }
       }

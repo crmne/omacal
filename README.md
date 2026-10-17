@@ -1,8 +1,8 @@
 # OmaCal
 
-Omarchy's stock clock and calendar, exactly as it ships, with your calendar
-laid over it. [HEY](https://hey.com) is the first calendar it reads; others
-plug in as backends (see [Backends](#backends)).
+Omarchy's stock clock and calendar, exactly as it ships, with your calendars
+laid over it: [HEY](https://hey.com), Google Calendar, and any calendar
+published as an `.ics` feed, side by side (see [Calendars](#calendars)).
 
 ![OmaCal's panel: the month grid with per-calendar chips, and the selected day](screenshots/panel.png)
 
@@ -43,17 +43,22 @@ plug in as backends (see [Backends](#backends)).
   and released when the plugin unloads.
 - **Delete** a one-off event from its hover button (with a confirmation).
   Repeating events are left to HEY, since deleting by id takes the series.
-- **Notifications.** The reminders you set in HEY arrive as desktop
+- **Notifications.** The reminders you set in HEY or Google arrive as desktop
   notifications, once each however many monitors you have, with a small
   calendar page in the event's calendar colour as the icon. Clicking one
   opens the meeting link or the event.
+- **Several services at once.** HEY, Google Calendar and `.ics` feeds are
+  read side by side, in one grid, one day view and one bar. New events go on
+  any HEY or Google calendar; each edit and delete goes to the service the
+  event came from.
 - **Time tracking** (HEY). Start and stop HEY's time tracker from today's view.
   Finished tracks show on their day under **Tracked**, with the day's
   total. Stopping one opens its name field right away; any track can be
   renamed by clicking it (HEY names a track by its category, created if
   new) or deleted from its hover button.
 - **Live sync.** HEY's `hey watch` stream refreshes the panel within seconds of
-  a change made anywhere else, with polling as the fallback.
+  a change made anywhere else, with polling as the fallback. Google and feeds
+  are polled at the refresh interval.
 - **In the bar**, like a macOS menu-bar calendar: an event's name and when
   sit in front of the stock clock (`󰃭 Team standup · in 12m`, then
   `· until 14:30`) from its **earliest reminder** until it ends. A day
@@ -83,10 +88,15 @@ The screenshots are the real plugin with a made-up calendar
 ## Requirements
 
 - Omarchy 4 with the Quattro shell plugin system
-- For the HEY backend:
+- For HEY:
   - **hey-cli 1.3.0 or newer**, signed in (`hey setup`). 1.3.0 is the version
   Omarchy installs, so a stock system works as is.
   - `jq` (part of Omarchy)
+- For Google Calendar: [gws](https://github.com/googleworkspace/cli), the
+  Google Workspace CLI, signed in with Calendar access (see
+  [Google Calendar](#google-calendar))
+- For Google Calendar and feeds: `/usr/bin/python3` (part of Omarchy); only
+  its standard library is used
 - For reminders: `/usr/bin/python3` with PyGObject (both part of Omarchy)
 
 ### hey-cli versions
@@ -98,6 +108,65 @@ The screenshots are the real plugin with a made-up calendar
 | older, or missing | nothing | The panel says so instead of showing empty days. |
 
 The version is read once, from `hey --version`, when the shell starts.
+
+## Calendars
+
+The settings (`S` in the panel) start with **Calendars from**, a switch per
+service, each saying what it reads or what is wrong. Turn off what you do not
+use: HEY is on by default and says nothing when hey-cli is not installed and
+another service answers.
+
+When two services have a calendar with the same name, it is labelled with its
+service (`Work · Google`). `hiddenCalendars` hides calendars by name across
+every service.
+
+### Google Calendar
+
+OmaCal signs in to Google through [gws](https://github.com/googleworkspace/cli),
+Google's Workspace CLI, so OmaCal stores no Google credentials:
+
+```bash
+npm install -g @googleworkspace/cli   # or a release binary from GitHub
+gws auth setup                         # once: an OAuth client in your Google Cloud project
+gws auth login -s calendar
+```
+
+Then turn on **Google Calendar** in the settings. It reads every calendar
+switched on in Google Calendar's own list, as the account gws is signed in
+to, and shows that account under the switch.
+
+- New events go on any Google calendar you can write to, with a reminder
+  from the form and no invitations sent.
+- Editing changes the title, day, times, zones, place, reminder and
+  calendar, for one day of a repeating event or the whole series. Reminders
+  can be removed.
+- An event with guests opens in Google Calendar to be changed or deleted,
+  because Google Calendar asks whether to email them and OmaCal does not
+  decide that for you; its reminder can still be changed here. An
+  invitation you are a guest on opens in Google Calendar.
+- Deleting works for one-off events, as with HEY.
+- Join links come from Google Meet and other conferencing (Zoom, Teams),
+  and reminders are the event's popup reminders or the calendar's default
+  ones.
+
+### Calendar feeds
+
+Any calendar published as an iCalendar address can be added under
+**Calendar feeds** in the settings: paste a `webcal://` or `https://`
+address and, optionally, a name (the feed's own name otherwise). Feeds are
+read only.
+
+- **Google**: a calendar's *Settings and sharing* → *Secret address in iCal
+  format*. This needs no gws, but cannot be written to.
+- **iCloud**: share a calendar as a *Public Calendar* and copy its link.
+- **Outlook**: *Settings* → *Calendar* → *Shared calendars* → *Publish a
+  calendar*, and copy the ICS link.
+- Holidays, sports fixtures and anything else served as `.ics`.
+
+Repeating events are unrolled by OmaCal: daily, weekly, monthly and yearly
+rules, with their days, counts, end dates, removed days and single days
+moved or cancelled, in the time zone each event names (Windows zone names
+too, as Outlook writes them).
 
 ## Install
 
@@ -125,6 +194,8 @@ touches nothing in your calendar.
 
 ## What it runs
 
+### HEY
+
 Calendar reads use `hey event week` or `hey event list`, `hey calendar
 list`, `hey timetrack`, and a long-running `hey watch` for live sync.
 Deleting events or tracks and starting or stopping the tracker also use
@@ -138,6 +209,32 @@ token is refreshed once with `hey auth refresh`. Local development servers
 may use HTTP on loopback. An edit first reads the event and resends the
 fields HEY would otherwise clear. Time-zone rules come from
 `/usr/share/zoneinfo`, including each end's own zone.
+
+### Google
+
+`backends/google.py` runs on the system Python with `-I`, standard library
+only. For each read or write it asks `gws auth export --unmasked` for gws's
+saved sign-in (client id, client secret and refresh token) over a pipe,
+trades it with `oauth2.googleapis.com` for an access token, and calls the
+Calendar API at `www.googleapis.com` over HTTPS. Neither is written
+anywhere or put on a command line, and both live only as long as that one
+process. Its arguments are an action and week dates; a write's request,
+with your title and place in it, goes to it on stdin. It sends invitations
+to nobody (`sendUpdates=none`), and checks an edit or delete against Google
+before making it.
+
+### Feeds
+
+`backends/feeds.py`, the same way, fetches each feed over HTTPS (following
+redirects only to HTTPS) and parses it itself. A feed's address is a
+password for its calendar, so the list is kept in
+`~/.config/omacal/feeds.json`, mode 600, and reaches the helper only
+through that file or its stdin. Settings and the panel know a feed by an id
+and its host name. What a feed served is kept for two minutes in
+`$XDG_RUNTIME_DIR/omacal/feeds`, readable only by you and cleared at
+logout, and asked for again with its ETag after that.
+
+### Everywhere
 
 CLI calls and HTTP requests have timeouts, and responses are size-bounded.
 Event text is length-capped and drawn as
@@ -194,8 +291,8 @@ The stock ones all work: arrows, `[` `]` months, `{` `}` years, `T` today,
 | `1` to `9` | Edit that event of the selected day |
 | `J` | Join the meeting of the event under way, or the next one |
 | `S` | Settings |
-| `O` | Open the selected day in HEY |
-| `R` | Refresh from HEY |
+| `O` | Open the selected day in HEY (or Google Calendar without HEY) |
+| `R` | Refresh every calendar |
 
 ## Settings
 
@@ -208,17 +305,23 @@ at once, so it can be edited there too.
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `barEvent` | `soon` | `soon`: name an event in the bar from its earliest reminder until it ends. `name`: the same, but only the title. `time`: the same, but only when (`in 12m`). `next`: always name today's next event. `off`: the glyph only. |
-| `notifications` | `true` | Show HEY reminders as notifications. |
+| `heyEnabled` | `true` | Read HEY. |
+| `googleEnabled` | `false` | Read and write Google Calendar through gws. |
+| `feedsEnabled` | `true` | Read the calendar feeds, when there are any. |
+| `notifications` | `true` | Show event reminders as notifications. |
 | `quickAddShortcut` | `ALT + SHIFT + SPACE` | Opens the quick-add card. Empty turns it off. |
 | `alertLeadMinutes` | `15` | How early the bar names an event that has no reminders, and what counts as "about to start". |
 | `timeFormat` | `auto` | `auto`, `12` or `24`. |
 | `liveSync` | `true` | Keep a `hey watch` running for instant updates. |
 | `refreshIntervalSec` | `300` | Polling fallback, 30 to 3600. |
-| `hiddenCalendars` | `""` | Comma-separated calendar names to leave out. |
+| `hiddenCalendars` | `""` | Comma-separated calendar names to leave out, from every service. |
 | `placeSuggestions` | `true` | Suggest places in the form's Where? field. The Google Maps key is not here but in its own file (see [What it runs](#what-it-runs)). |
 
 The panel also stores `weekStartDay`, `birthYear`, `lifeExpectancy` (stock)
-and `lastCalendarId` (the calendar the last new event went on).
+and `lastCalendarId` (the calendar the last new event went on, as
+`service:id`, like `google:work@example.com`; a bare number is a HEY
+calendar). Calendar feeds are not in `shell.json` but in
+`~/.config/omacal/feeds.json`.
 
 ## Not yet
 
@@ -232,6 +335,12 @@ HEY, a click away from the form. An edited event's times are shown on this
 machine's clock, and saving new times writes them in the zones the form
 shows.
 
+Google Calendar is polled rather than followed live: Google pushes changes
+only to a public web address. Event colours are Google's, but OmaCal does
+not change them. An event with guests is changed in Google Calendar. Feeds
+are read only, and repeat rules by hour or minute show only their first
+occurrence.
+
 HEY returns event notes as plain text. Editing an event preserves that text
 but loses its original formatting. Use HEY to edit an event whose note
 formatting must stay intact. If a countdown or an ambiguous stored time
@@ -244,22 +353,31 @@ but do not yet support compose/dead keys, IME input or mouse selection.
 
 A backend supplies the commands and API requests that read and write
 a calendar service, a probe that says whether (and how) it can run, and the
-capabilities it has (`create`, `delete`, `watch`, `timeTracking`,
-`dayLink`). The panel hides what a backend cannot do.
+capabilities it has (`create`, `edit`, `delete`, `watch`, `timeTracking`,
+`dayLink`). The panel hides what a backend cannot do, event by event.
 
 Read commands print the standard JSON shapes
 documented at the top of `Calendar.js` (events per week or per span,
 calendars, time tracks), so everything after the command is shared: the
 grid, the day view, repeats, the bar, reminders and notifications. Colors
-can be HEY's color names or `#rrggbb`. `backends/Hey.js` is the reference;
-CalDAV through `khal`, Google through `gcalcli`, and plain `.ics` files are
-the natural next ones.
+can be HEY's color names or `#rrggbb`. Each backend is read by its own
+`Source.qml`, and the bar widget lays the sources over each other; a
+calendar is known everywhere by its key, `source:id`. Writes go through
+`Writer.qml` to the backend the calendar belongs to.
+
+`backends/Hey.js` is the reference. `backends/Google.js` and
+`backends/Feeds.js` run a helper next to them (`google.py`, `feeds.py`)
+and hand it what you typed on stdin. CalDAV (Fastmail, iCloud, Nextcloud)
+is the natural next one. The first Google backend was written by
+[David Paluy](https://github.com/dpaluy) in
+[#2](https://github.com/crmne/omacal/pull/2).
 
 ## Develop
 
 ```bash
-tests/run                  # Calendar, HTTP payloads and time zones, in five zones
+tests/run                  # Calendar, HTTP payloads, time zones, Google and feeds, in five zones
 gpu-lock node tests/transport/run.js  # Optional QML transport check with a local fake HEY
+gpu-lock node tests/sources/run.js    # Optional QML check: HEY, Google and a feed at once, with fakes
 omarchy plugin validate .
 ```
 
@@ -270,7 +388,8 @@ quick-add card; `omarchy-shell crmne.omacal open` the panel, and
 `omarchy-shell crmne.omacal settings` its settings.
 
 `Model.js` is Omarchy's and stays stock. `Calendar.js` holds the calendar
-model, and `backends/` the services; both run under plain node.
+model, and `backends/` the services; both run under plain node, and the
+backends' Python helpers under the system Python.
 
 ## License
 
