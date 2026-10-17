@@ -202,10 +202,12 @@ function fetchCommand(mode, weekKeys) {
 
 // Named calendars only. The unnamed personal calendar holds todos, habits
 // and the journal rather than events, and HEY's own form never offers it.
+// A calendar HEY subscribes to elsewhere (external) is read only in HEY,
+// so it is not counted as yours to add events to.
 var calendarsCommand = ["bash", "-c",
   "timeout -k 3 20 hey calendar list --json 2>/dev/null"
   + " | jq -c '[.data[] | select(.name != null and .name != \"\")"
-  + " | {id, name, color: (.color // \"\"), kind: (.kind // \"\"), owned: (.owned // false)}]'"
+  + " | {id, name, color: (.color // \"\"), kind: (.kind // \"\"), owned: ((.owned // false) and ((.external // false) | not))}]'"
   + " | head -c 262144",
   "omacal"]
 

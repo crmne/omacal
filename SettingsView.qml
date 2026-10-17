@@ -36,27 +36,11 @@ FocusScope {
   readonly property var hidden: Cal.parseHiddenCalendars(value("hiddenCalendars", ""))
   property int calendarCursor: 0
 
-  function toggleCalendar(name) {
-    var key = String(name).toLowerCase()
-    var next = []
-    var found = false
-    for (var i = 0; i < root.hidden.length; i++) {
-      if (root.hidden[i] === key) found = true
-      else next.push(root.hidden[i])
-    }
-    if (!found) next.push(key)
-    // Written back with the calendars' own capitalisation, so shell.json
-    // reads the way the pills do.
-    var names = []
+  // One calendar shown or hidden, by its key, so a calendar of the same
+  // name on another service stays as it is.
+  function toggleCalendar(calendar) {
     var calendars = root.host ? root.host.calendars : []
-    for (var c = 0; c < calendars.length; c++)
-      if (next.indexOf(String(calendars[c].name).toLowerCase()) !== -1) names.push(calendars[c].name)
-    for (var n = 0; n < next.length; n++) {
-      var known = false
-      for (var k = 0; k < names.length; k++) if (names[k].toLowerCase() === next[n]) known = true
-      if (!known) names.push(next[n])
-    }
-    save("hiddenCalendars", names.join(", "))
+    save("hiddenCalendars", Cal.toggleHidden(root.hidden, calendar, calendars).join(", "))
   }
 
   // The view takes the keyboard, but no row does until Tab moves into
@@ -604,7 +588,7 @@ FocusScope {
         } else if (event.key === Qt.Key_Right || event.key === Qt.Key_L) {
           root.calendarCursor = (root.calendarCursor + 1) % count
         } else if (event.key === Qt.Key_Space || event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
-          root.toggleCalendar(root.host.calendars[root.calendarCursor].name)
+          root.toggleCalendar(root.host.calendars[root.calendarCursor])
         } else {
           return
         }
@@ -620,28 +604,45 @@ FocusScope {
         spacing: Style.space(6)
 
         Repeater {
-          model: root.host ? root.host.calendars : []
+          model: Cal.groupedCalendars(root.host ? root.host.calendars : [])
 
           Rectangle {
+            id: pill
             required property var modelData
-            required property int index
-            readonly property bool shown: root.hidden.indexOf(String(modelData.name).toLowerCase()) === -1
-            readonly property bool cursor: calendarRow.activeFocus && root.calendarCursor === index
-            width: pillRow.implicitWidth + Style.space(20)
-            height: pillRow.implicitHeight + Style.space(8)
-            radius: height / 2
-            color: shown ? Cal.calendarColor(modelData.color, Color.accent) : "transparent"
-            border.width: shown ? (cursor ? 2 : 0) : (cursor ? 2 : 1)
+            readonly property bool heading: modelData.heading !== undefined
+            readonly property bool shown: !Cal.isHidden(modelData, root.hidden)
+            readonly property bool cursor: !heading && calendarRow.activeFocus && root.host
+              && root.host.calendars.length > root.calendarCursor
+              && root.host.calendars[root.calendarCursor].key === modelData.key
+            // A service's heading takes a line of its own.
+            width: heading ? calendarFlow.width : pillRow.implicitWidth + Style.space(20)
+            height: heading ? headingText.implicitHeight + Style.space(2) : pillRow.implicitHeight + Style.space(8)
+            radius: heading ? 0 : height / 2
+            color: heading || !shown ? "transparent" : Cal.calendarColor(modelData.color, Color.accent)
+            border.width: heading ? 0 : shown ? (cursor ? 2 : 0) : (cursor ? 2 : 1)
             border.color: cursor ? root.foreground : Qt.darker(root.foreground, 1.8)
+
+            Text {
+              id: headingText
+              visible: pill.heading
+              anchors.bottom: parent.bottom
+              textFormat: Text.PlainText
+              text: pill.heading ? String(pill.modelData.heading).toUpperCase() : ""
+              color: Qt.darker(root.foreground, 1.4)
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption
+              font.letterSpacing: 1
+            }
 
             Row {
               id: pillRow
+              visible: !pill.heading
               anchors.centerIn: parent
               spacing: Style.space(5)
 
               Text {
-                text: parent.parent.shown ? "󰄬" : "󰅖"
-                color: parent.parent.shown ? Cal.calendarInk : Qt.darker(root.foreground, 1.6)
+                text: pill.shown ? "󰄬" : "󰅖"
+                color: pill.shown ? Cal.calendarInk : Qt.darker(root.foreground, 1.6)
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.caption
                 anchors.verticalCenter: parent.verticalCenter
@@ -649,20 +650,23 @@ FocusScope {
 
               Text {
                 textFormat: Text.PlainText
-                text: modelData.label || modelData.name
-                color: parent.parent.shown ? Cal.calendarInk : Qt.darker(root.foreground, 1.6)
+                text: pill.modelData.name
+                color: pill.shown ? Cal.calendarInk : Qt.darker(root.foreground, 1.6)
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.bodySmall
-                font.strikeout: !parent.parent.shown
+                font.strikeout: !pill.shown
               }
             }
 
             MouseArea {
               anchors.fill: parent
+              enabled: !pill.heading
               cursorShape: Qt.PointingHandCursor
               onClicked: {
-                root.calendarCursor = index
-                root.toggleCalendar(modelData.name)
+                var calendars = root.host ? root.host.calendars : []
+                for (var i = 0; i < calendars.length; i++)
+                  if (calendars[i].key === pill.modelData.key) root.calendarCursor = i
+                root.toggleCalendar(pill.modelData)
               }
             }
           }

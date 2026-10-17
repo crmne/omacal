@@ -116,9 +116,16 @@ service, each saying what it reads or what is wrong. Turn off what you do not
 use: HEY is on by default and says nothing when hey-cli is not installed and
 another service answers.
 
-When two services have a calendar with the same name, it is labelled with its
-service (`Work · Google`). `hiddenCalendars` hides calendars by name across
-every service.
+When calendars come from more than one service, the settings and the event
+form list each service's under its name (HEY, Google, Feeds). Hiding a
+calendar in the settings hides that one only, not a calendar of the same name
+on another service. `hiddenCalendars` keeps the calendars hidden in the
+settings as keys (`hey:7`); a name typed in by hand still hides every
+calendar of that name.
+
+Calendars HEY subscribes to from elsewhere (a Google calendar added to HEY,
+say) are read only in HEY, so new events cannot go on them. Add events to the
+Google calendar itself by switching on Google.
 
 ### Google Calendar
 
@@ -314,7 +321,7 @@ at once, so it can be edited there too.
 | `timeFormat` | `auto` | `auto`, `12` or `24`. |
 | `liveSync` | `true` | Keep a `hey watch` running for instant updates. |
 | `refreshIntervalSec` | `300` | Polling fallback, 30 to 3600. |
-| `hiddenCalendars` | `""` | Comma-separated calendar names to leave out, from every service. |
+| `hiddenCalendars` | `""` | Comma-separated calendars to leave out: keys such as `hey:7`, as the settings write them, or names, which hide that name on every service. |
 | `placeSuggestions` | `true` | Suggest places in the form's Where? field. The Google Maps key is not here but in its own file (see [What it runs](#what-it-runs)). |
 
 The panel also stores `weekStartDay`, `birthYear`, `lifeExpectancy` (stock)

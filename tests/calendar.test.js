@@ -674,6 +674,34 @@ test("calendars two services share a name are told apart, and only once", functi
   assert.deepStrictEqual(merged.map(function(c) { return c.label }), ["Work · HEY", "Family", "work · Google"])
 })
 
+test("hiding a calendar by key leaves another service's calendar of the same name", function() {
+  var calendars = [{ key: "hey:1", name: "Work" }, { key: "google:w@example.com", name: "Work" }, { key: "hey:2", name: "Family" }]
+  var hidden = Hey.toggleHidden([], calendars[1], calendars)
+  assert.deepStrictEqual(hidden, ["google:w@example.com"])
+  assert.deepStrictEqual(Hey.parseHiddenCalendars(hidden.join(", ")), ["google:w@example.com"])
+  assert.ok(!Hey.isHidden(calendars[0], hidden))
+  assert.ok(Hey.isHidden(calendars[1], hidden))
+  var events = [{ title: "HEY", calendar: "Work", calendarKey: "hey:1" }, { title: "Google", calendar: "Work", calendarKey: "google:w@example.com" }]
+  assert.deepStrictEqual(Hey.withoutHidden(events, hidden).map(function(e) { return e.title }), ["HEY"])
+  assert.deepStrictEqual(Hey.toggleHidden(hidden, calendars[1], calendars), [])
+  // A name typed by hand hid both; showing one keeps the other hidden.
+  var byName = Hey.parseHiddenCalendars("work")
+  assert.ok(Hey.isHidden(calendars[0], byName) && Hey.isHidden(calendars[1], byName))
+  assert.deepStrictEqual(Hey.toggleHidden(byName, calendars[0], calendars), ["google:w@example.com"])
+})
+
+test("the pills group calendars under their service, Maybe last within HEY's", function() {
+  var merged = Hey.mergeCalendars([
+    { name: "HEY", calendars: [{ key: "hey:9", source: "hey", name: "Maybe", kind: "maybe", owned: true },
+      { key: "hey:1", source: "hey", name: "Work", owned: true }, { key: "hey:3", source: "hey", name: "Google", owned: false }] },
+    { name: "Google", calendars: [{ key: "google:me@example.com", source: "google", name: "me@example.com", owned: true }] }])
+  var writable = Hey.writableCalendars(merged)
+  assert.deepStrictEqual(writable.map(function(c) { return c.key }), ["hey:1", "hey:9", "google:me@example.com"])
+  assert.deepStrictEqual(Hey.groupedCalendars(writable).map(function(c) { return c.heading || c.key }),
+    ["HEY", "hey:1", "hey:9", "Google", "google:me@example.com"])
+  assert.strictEqual(Hey.groupedCalendars(writable.slice(0, 2)).length, 2)
+})
+
 test("a new event names its service and that service's id for the calendar", function() {
   var r = build({ title: "Lunch", date: "2026-10-19", startTime: "13:00", calendarKey: "google:work@example.com" }).request
   assert.strictEqual(r.source, "google")

@@ -266,17 +266,39 @@ function parseCalendars(raw, source) {
 }
 
 // Calendars a new event can go on: the ones you own. "Maybe" is HEY's own
-// holding pen for tentative plans and is kept, last, the way HEY lists it.
+// holding pen for tentative plans and is kept, last among its service's
+// calendars, the way HEY lists it.
 function writableCalendars(calendars) {
   var list = Array.isArray(calendars) ? calendars : []
-  var normal = []
+  var out = []
   var maybe = []
   for (var i = 0; i < list.length; i++) {
+    if (i > 0 && list[i].source !== list[i - 1].source) {
+      out = out.concat(maybe)
+      maybe = []
+    }
     if (!list[i].owned) continue
     if (list[i].kind === "maybe") maybe.push(list[i])
-    else normal.push(list[i])
+    else out.push(list[i])
   }
-  return normal.concat(maybe)
+  return out.concat(maybe)
+}
+
+// A list of calendars with a heading before each service's, for the pills,
+// when they come from more than one service: { heading, key } entries
+// between the calendars. One service's calendars come back as they are.
+function groupedCalendars(calendars) {
+  var list = Array.isArray(calendars) ? calendars : []
+  var sources = {}
+  for (var i = 0; i < list.length; i++) sources[list[i].source] = true
+  if (Object.keys(sources).length < 2) return list
+  var out = []
+  for (var j = 0; j < list.length; j++) {
+    if (j === 0 || list[j].source !== list[j - 1].source)
+      out.push({ heading: String(list[j].service || list[j].source || ""), key: "heading:" + list[j].source })
+    out.push(list[j])
+  }
+  return out
 }
 
 // Every source's calendars in one list, each with the label the panel shows:
@@ -300,7 +322,8 @@ function mergeCalendars(sources) {
     var copy = {}
     for (var field in all[j].calendar) copy[field] = all[j].calendar[field]
     var shared = Object.keys(counts[String(copy.name).toLowerCase()]).length > 1
-    copy.label = shared ? copy.name + " · " + String(list[all[j].source].name || "") : copy.name
+    copy.service = String(list[all[j].source].name || "")
+    copy.label = shared ? copy.name + " · " + copy.service : copy.name
     out.push(copy)
   }
   return out
@@ -573,25 +596,64 @@ function mergeWeeks(cache) {
   return out
 }
 
-// Calendars named in the `hiddenCalendars` setting are left out, whatever
-// the backend. Some backends already leave out what is switched off in
-// their own app; for the rest, this is how to hide a calendar.
+// The `hiddenCalendars` setting: calendar keys ("hey:7", as the settings
+// write it, hiding that one calendar), and names typed by hand ("Todoist",
+// hiding every calendar of that name, whatever the service). Names are
+// matched without case; keys exactly.
+var hiddenKeyPattern = /^(hey|google|feeds):\S/
+
 function parseHiddenCalendars(value) {
   var list = Array.isArray(value) ? value : String(value || "").split(",")
   var out = []
   for (var i = 0; i < list.length; i++) {
-    var name = String(list[i] || "").replace(/^\s+|\s+$/g, "").toLowerCase()
-    if (name !== "" && out.indexOf(name) === -1) out.push(name)
+    var entry = String(list[i] || "").replace(/^\s+|\s+$/g, "")
+    if (!hiddenKeyPattern.test(entry)) entry = entry.toLowerCase()
+    if (entry !== "" && out.indexOf(entry) === -1) out.push(entry)
   }
   return out
 }
 
+// Whether a calendar ({ key, name }) or an event ({ calendarKey, calendar })
+// is hidden.
+function isHidden(item, hidden) {
+  var entries = Array.isArray(hidden) ? hidden : []
+  if (entries.length === 0 || !item) return false
+  var event = item.calendar !== undefined || item.calendarKey !== undefined
+  var key = String(event ? item.calendarKey : item.key)
+  var name = String(event ? item.calendar : item.name).toLowerCase()
+  return entries.indexOf(key) !== -1 || entries.indexOf(name) !== -1
+}
+
 function withoutHidden(events, hidden) {
-  var names = Array.isArray(hidden) ? hidden : []
-  if (names.length === 0) return events
+  var entries = Array.isArray(hidden) ? hidden : []
+  if (entries.length === 0) return events
   var out = []
   for (var i = 0; i < events.length; i++)
-    if (names.indexOf(String(events[i].calendar).toLowerCase()) === -1) out.push(events[i])
+    if (!isHidden(events[i], entries)) out.push(events[i])
+  return out
+}
+
+// The setting with one calendar shown or hidden, and no other: a name that
+// hid it along with others becomes the others' keys.
+function toggleHidden(hidden, calendar, calendars) {
+  var entries = Array.isArray(hidden) ? hidden.slice() : []
+  var list = Array.isArray(calendars) ? calendars : []
+  if (!calendar) return entries
+  var key = String(calendar.key)
+  var name = String(calendar.name).toLowerCase()
+  if (!isHidden(calendar, entries)) {
+    entries.push(key)
+    return entries
+  }
+  var out = []
+  for (var i = 0; i < entries.length; i++) {
+    if (entries[i] === key) continue
+    if (entries[i] !== name) { out.push(entries[i]); continue }
+    for (var c = 0; c < list.length; c++) {
+      var other = String(list[c].key)
+      if (other !== key && String(list[c].name).toLowerCase() === name && out.indexOf(other) === -1) out.push(other)
+    }
+  }
   return out
 }
 
@@ -1685,6 +1747,9 @@ if (typeof module !== "undefined") {
     mergeWeeks: mergeWeeks,
     parseHiddenCalendars: parseHiddenCalendars,
     withoutHidden: withoutHidden,
+    isHidden: isHidden,
+    toggleHidden: toggleHidden,
+    groupedCalendars: groupedCalendars,
     dateKey: dateKey,
     keyForDate: keyForDate,
     dateFromKey: dateFromKey,

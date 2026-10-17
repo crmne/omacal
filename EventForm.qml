@@ -551,36 +551,43 @@ Item {
       spacing: Style.space(6)
 
       Repeater {
-        model: root.calendars
+        model: Cal.groupedCalendars(root.calendars)
 
         Rectangle {
+          id: calendarPill
           required property var modelData
-          readonly property bool chosen: modelData.key === root.calendarKey
-          width: calendarName.implicitWidth + Style.space(20)
-          height: calendarName.implicitHeight + Style.space(8)
-          radius: height / 2
-          color: Cal.calendarColor(modelData.color, root.accent)
-          opacity: chosen || calendarMouse.containsMouse ? 1 : 0.55
+          readonly property bool heading: modelData.heading !== undefined
+          readonly property bool chosen: !heading && modelData.key === root.calendarKey
+          // A service's heading takes a line of its own, so each calendar
+          // reads as HEY's, Google's, or a feed's.
+          width: heading ? calendarFlow.width : calendarName.implicitWidth + Style.space(20)
+          height: heading ? calendarName.implicitHeight + Style.space(2) : calendarName.implicitHeight + Style.space(8)
+          radius: heading ? 0 : height / 2
+          color: heading ? "transparent" : Cal.calendarColor(modelData.color, root.accent)
+          opacity: heading || chosen || calendarMouse.containsMouse ? 1 : 0.55
           border.width: chosen ? 2 : 0
           border.color: root.foreground
 
           Text {
             id: calendarName
-            anchors.centerIn: parent
+            anchors.centerIn: calendarPill.heading ? undefined : parent
+            anchors.bottom: calendarPill.heading ? parent.bottom : undefined
             textFormat: Text.PlainText
-            text: modelData.label || modelData.name
-            color: Cal.calendarInk
+            text: calendarPill.heading ? String(calendarPill.modelData.heading).toUpperCase() : calendarPill.modelData.name
+            color: calendarPill.heading ? Qt.darker(root.foreground, 1.4) : Cal.calendarInk
             font.family: root.fontFamily
-            font.pixelSize: Style.font.bodySmall
-            font.bold: parent.chosen
+            font.pixelSize: calendarPill.heading ? Style.font.caption : Style.font.bodySmall
+            font.letterSpacing: calendarPill.heading ? 1 : 0
+            font.bold: calendarPill.chosen
           }
 
           MouseArea {
             id: calendarMouse
             anchors.fill: parent
+            enabled: !calendarPill.heading
             hoverEnabled: true
             cursorShape: Qt.PointingHandCursor
-            onClicked: root.calendarKey = modelData.key
+            onClicked: root.calendarKey = calendarPill.modelData.key
           }
         }
       }

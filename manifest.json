@@ -144,7 +144,7 @@
         "type": "string",
         "label": "Hidden calendars",
         "defaultValue": "",
-        "description": "Comma-separated calendar names to leave out, from every service. Needed on hey-cli 1.3, which cannot see which calendars are switched off in HEY."
+        "description": "Comma-separated calendars to leave out: keys such as hey:7, as the settings write them, or names, which hide that name on every service. Needed on hey-cli 1.3, which cannot see which calendars are switched off in HEY."
       }
     ]
   }

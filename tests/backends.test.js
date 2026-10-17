@@ -2,6 +2,8 @@
 const assert = require('node:assert/strict')
 const Google = require('../backends/Google.js')
 const Feeds = require('../backends/Feeds.js')
+const Hey = require('../backends/Hey.js')
+const { spawnSync } = require('node:child_process')
 
 let count = 0
 function test(name, fn) {
@@ -10,6 +12,18 @@ function test(name, fn) {
 
 const context = { dir: '/plugins/omacal/' }
 const privateText = 'private-note-canary'
+
+test('a calendar HEY subscribes to elsewhere is not one to add events to', () => {
+  const sample = JSON.stringify({ data: [{ id: 1, name: 'Work', owned: true }, { id: 2, name: 'Google', owned: true, external: true }, { id: 3, kind: 'normal' }] })
+  const fakeHey = '#!/bin/bash\necho ' + JSON.stringify(sample).replace(/^"|"$/g, "'").replace(/\\"/g, '"') + '\n'
+  const os = require('node:os'), fs = require('node:fs'), path = require('node:path')
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'omacal-hey-'))
+  try {
+    fs.writeFileSync(path.join(dir, 'hey'), fakeHey, { mode: 0o700 })
+    const run = spawnSync(Hey.calendarsCommand[0], Hey.calendarsCommand.slice(1), { env: { ...process.env, PATH: dir + ':' + process.env.PATH }, encoding: 'utf8' })
+    assert.deepEqual(JSON.parse(run.stdout).map(c => [c.name, c.owned]), [['Work', true], ['Google', false]])
+  } finally { fs.rmSync(dir, { recursive: true, force: true }) }
+})
 
 test('Google writes carry what was typed on stdin, never in the command', () => {
   const create = Google.writeCommand('create', { title: privateText, location: privateText, date: '2026-10-19' }, context)
