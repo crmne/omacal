@@ -3,6 +3,7 @@
 /usr/bin/python3 -I tests/test_feeds.py
 """
 import datetime as dt
+import email.message
 import importlib.util
 import io
 import os
@@ -186,6 +187,46 @@ class FeedList(unittest.TestCase):
         identifier = feeds.feed_id("https://calendar.google.com/calendar/ical/secret/basic.ics")
         self.assertRegex(identifier, r"^f[0-9a-f]{16}$")
         self.assertNotIn("secret", identifier)
+
+
+class Redirects(unittest.TestCase):
+    class Body:
+        """A redirect's body, endless until it is closed."""
+        def __init__(self):
+            self.closed = False
+            self.read_bytes = 0
+
+        def read(self, amount=None):
+            if self.closed:
+                return b""
+            self.read_bytes += 1 << 30
+            return b"x" * 1024
+
+        def close(self):
+            self.closed = True
+
+    class Opener:
+        def open(self, request, timeout=None):
+            return request.full_url
+
+    def follow(self, location):
+        handler = feeds.HttpsOnly()
+        handler.add_parent(self.Opener())
+        body = self.Body()
+        request = feeds.urllib.request.Request("https://example.com/a.ics")
+        request.timeout = 10
+        headers = email.message.Message()
+        headers["Location"] = location
+        return handler.http_error_302(request, body, 302, "Found", headers), body
+
+    def test_a_redirect_body_is_not_read(self):
+        reached, body = self.follow("https://example.org/b.ics")
+        self.assertEqual(reached, "https://example.org/b.ics")
+        self.assertEqual(body.read_bytes, 0)
+
+    def test_a_redirect_away_from_https_is_refused(self):
+        with self.assertRaises(feeds.Failure):
+            self.follow("http://example.org/b.ics")
 
 
 if __name__ == "__main__":

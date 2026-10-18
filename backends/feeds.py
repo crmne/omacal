@@ -170,7 +170,12 @@ class HttpsOnly(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         if not allowed_url(newurl):
             raise Failure("A feed redirected away from HTTPS, so OmaCal did not follow it.")
-        return super().redirect_request(req, fp, code, msg, headers, newurl)
+        new = super().redirect_request(req, fp, code, msg, headers, newurl)
+        # CPython reads a redirect's whole body before following it, with no
+        # limit; closed first, that read gets nothing.
+        if new is not None:
+            fp.close()
+        return new
 
 
 def cache_dir():
