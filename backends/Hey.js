@@ -140,6 +140,10 @@ var eventProjection = "map({"
 // one. Each writes its own file, so a large week can never interleave with
 // another on the pipe, and the results come back one JSON line per week.
 //
+// The file is the projection, not HEY's answer. Notes, guests and journal
+// text are dropped before anything is written, and the outer read does not
+// project again: a second pass would lose the calendar name.
+//
 // A week that failed is reported as failed rather than as empty. An empty
 // answer is the shape every failure takes with the CLI (missing, signed
 // out, offline), and drawing it as a clear week would be a lie.
@@ -152,12 +156,14 @@ var weekScript = [
   "filter=$1; shift",
   "for d in \"$@\"; do",
   "  (timeout -k " + cliKillGraceSeconds + " " + cliTimeoutSeconds
-    + " hey event week \"$d\" --json --all > \"$dir/$d\" 2>/dev/null) &",
+    + " hey event week \"$d\" --json --all 2>/dev/null"
+    + " | jq -c \"if .ok == true then {ok: true, data: (.data | $filter)} else {ok: false} end\""
+    + " > \"$dir/$d\") &",
   "done",
   "wait",
   "for d in \"$@\"; do",
   "  if jq -e '.ok == true' \"$dir/$d\" >/dev/null 2>&1; then",
-  "    jq -c --arg w \"$d\" \"{week: \\$w, events: (.data | $filter)}\" \"$dir/$d\" 2>/dev/null"
+  "    jq -c --arg w \"$d\" '{week: $w, events: (.data // [])}' \"$dir/$d\" 2>/dev/null"
     + " || printf '{\"week\":\"%s\",\"error\":true}\\n' \"$d\"",
   "  else",
   "    printf '{\"week\":\"%s\",\"error\":true}\\n' \"$d\"",

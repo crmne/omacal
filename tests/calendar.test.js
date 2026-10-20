@@ -123,6 +123,17 @@ test("past the limit, the last chip is +N for the rest", function() {
 
 // ---- Parsing
 
+test("a week file is the projection, written before the temp file", function() {
+  var script = Backend.weekCommand(["2026-09-28"])[2]
+  var fetch = script.split("\n").filter(function(line) { return line.indexOf("event week") !== -1 })[0]
+  var read = script.split("\n").filter(function(line) { return line.indexOf("week:") !== -1 })[0]
+  assert.ok(fetch.indexOf("| jq -c") !== -1, fetch)
+  assert.ok(fetch.indexOf('> "$dir/$d"') !== -1, fetch)
+  assert.strictEqual(fetch.indexOf("--json --all >"), -1)
+  assert.ok(read.indexOf(".data // []") !== -1, read)
+  assert.strictEqual(read.indexOf("$filter"), -1)
+})
+
 test("week output: failures are null, not empty", function() {
   var out = '{"week":"2026-09-28","events":[{"id":1,"title":"A","starts_at":"2026-09-28T10:00:00Z","ends_at":"2026-09-28T11:00:00Z"}]}\n'
     + '{"week":"2026-10-05","error":true}\n'
