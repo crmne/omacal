@@ -1,6 +1,6 @@
 import QtQuick
 import Quickshell
-import "plugin" as OmaCal
+import "plugin" as Plugin
 import "plugin/Calendar.js" as Cal
 
 // The real bar widget with HEY, Google and a feed switched on, against the
@@ -49,7 +49,7 @@ ShellRoot {
     return found.length > 0 ? found[0] : null
   }
 
-  OmaCal.BarWidget {
+  Plugin.BarWidget {
     id: widget
     moduleName: "crmne.omacal"
     settings: ({ id: "crmne.omacal", googleEnabled: true, notifications: false, liveSync: false, refreshIntervalSec: 30 })
@@ -76,7 +76,7 @@ ShellRoot {
         var edited = bySource("google").filter(function(e) { return e.title === "Edited Google event" })
         if (edited.length === 0) return
         root.phase = 5
-        if (!widget.canDelete(edited[0])) root.fail("the event OmaCal made was not deletable")
+        if (!widget.canDelete(edited[0])) root.fail("the event Calendar for Omarchy made was not deletable")
         if (!widget.deleteEvent(edited[0], root.today)) root.fail("the delete did not start")
       } else if (root.phase === 6) {
         console.log("SOURCES PASSED")
@@ -87,9 +87,9 @@ ShellRoot {
 
   // The panel's parts, built here too: the panel itself needs a window
   // offscreen Qt cannot give it, and these would otherwise go unchecked.
-  OmaCal.SettingsView { visible: false; host: widget; loadsFeeds: false }
-  OmaCal.EventForm { visible: false; loadZones: false; calendars: widget.writableCalendars }
-  OmaCal.EventCard { visible: false }
+  Plugin.SettingsView { visible: false; host: widget; loadsFeeds: false }
+  Plugin.EventForm { visible: false; loadZones: false; calendars: widget.writableCalendars }
+  Plugin.EventCard { visible: false }
 
   Timer { interval: 40000; running: true; onTriggered: root.fail("timed out in phase " + root.phase) }
 }

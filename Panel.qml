@@ -152,7 +152,7 @@ Panel {
   }
 
   // Opens an event in the form, to change it here rather than in its
-  // service. One its service will not let OmaCal change (a feed, an
+  // service. One its service will not let Calendar for Omarchy change (a feed, an
   // invitation) opens in the service instead.
   function editEvent(event) {
     if (!root.hostWidget || !event) return

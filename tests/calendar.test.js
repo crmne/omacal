@@ -529,7 +529,7 @@ test("deleting and moving work by character and by word", function() {
   assert.strictEqual(Edit.backspace(Edit.selectAll(s)).text, "")
 })
 
-test("no field in OmaCal is a Qt text input", function() {
+test("no field in Calendar for Omarchy is a Qt text input", function() {
   var fs = require("fs")
   var path = require("path")
   var dir = path.join(__dirname, "..")

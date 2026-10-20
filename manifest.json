@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "id": "crmne.omacal",
-  "name": "OmaCal",
-  "version": "1.2.0",
+  "name": "Calendar for Omarchy",
+  "version": "1.2.1",
   "author": "Carmine Paolino",
   "license": "MIT",
   "description": "Omarchy's stock clock and calendar with your calendars laid over it: HEY, Google Calendar and .ics feeds side by side, per-calendar event chips on the month grid, a day view, new events from the panel or a quick-add shortcut, reminders as notifications, the next event in the bar, and HEY time tracking.",
@@ -17,7 +17,7 @@
     "overlay": "QuickAdd.qml"
   },
   "barWidget": {
-    "displayName": "OmaCal",
+    "displayName": "Calendar",
     "description": "The stock date/time label and calendar popup, with your calendar in it.",
     "category": "Time",
     "aliases": [
@@ -64,7 +64,7 @@
         "type": "boolean",
         "label": "Read calendar feeds",
         "defaultValue": true,
-        "description": "Reads the .ics feeds added in OmaCal's own settings, which keeps their addresses in ~/.config/omacal/feeds.json."
+        "description": "Reads the .ics feeds added in Calendar for Omarchy's own settings, which keeps their addresses in ~/.config/omacal/feeds.json."
       },
       {
         "key": "barEvent",
@@ -92,7 +92,7 @@
         "type": "boolean",
         "label": "Suggest places",
         "defaultValue": true,
-        "description": "Offers places while you type in Where?, from Google with a Google Maps API key (set in OmaCal's own settings) or else OpenStreetMap. What you type there is sent to that service."
+        "description": "Offers places while you type in Where?, from Google with a Google Maps API key (set in Calendar for Omarchy's own settings) or else OpenStreetMap. What you type there is sent to that service."
       },
       {
         "key": "quickAddShortcut",

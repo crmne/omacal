@@ -1,11 +1,11 @@
 import QtQuick
 import Quickshell
-import "plugin" as OmaCal
+import "plugin" as Plugin
 
 ShellRoot {
   id: root
   property int phase: 0
-  OmaCal.ApiWriter {
+  Plugin.ApiWriter {
     id: writer
     onFinished: function(ok, message) {
       if (!ok) { console.error("TRANSPORT FAILED: " + message); Qt.exit(1); return }

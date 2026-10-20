@@ -6,7 +6,7 @@ import "Calendar.js" as Cal
 import "Places.js" as Places
 import "backends/Feeds.js" as Feeds
 
-// OmaCal's settings, inside the panel. Omarchy keeps a widget's
+// Calendar for Omarchy's settings, inside the panel. Omarchy keeps a widget's
 // schema but draws no settings screen for it yet, so this is where they are
 // set. Every change is written to the widget's entry in shell.json the
 // moment it is made, the same place the stock settings live.

@@ -10,7 +10,7 @@
 var hourSeconds = 3600
 var daySeconds = 86400
 
-// A zone OmaCal will load: a path under the zone directory, never an alias
+// A zone Calendar for Omarchy will load: a path under the zone directory, never an alias
 // hey-cli refuses (Local, posix/, right/ and the like).
 function isZoneName(name) {
   var text = String(name || "")

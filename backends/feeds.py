@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""OmaCal's calendar-feed helper (backends/Feeds.js runs it).
+"""Calendar for Omarchy's calendar-feed helper (backends/Feeds.js runs it).
 
 Reads iCalendar (.ics) feeds: the "secret address in iCal format" of a
 Google calendar, an iCloud or Outlook published calendar, a holiday or
 sports calendar, anything served over HTTPS. Prints their events in
-OmaCal's standard shapes (see "Backends" at the top of Calendar.js), with
+Calendar for Omarchy's standard shapes (see "Backends" at the top of Calendar.js), with
 every repeating event unrolled here: RRULE (daily, weekly, monthly, yearly,
 with BYDAY, BYMONTHDAY, BYMONTH, BYSETPOS, COUNT and UNTIL), RDATE, EXDATE,
 and single days moved or cancelled (RECURRENCE-ID). Times are read in their
@@ -108,7 +108,7 @@ def load_feeds():
     except FileNotFoundError:
         return []
     except (OSError, ValueError):
-        raise Failure("OmaCal could not read its feed list, %s." % config_path()) from None
+        raise Failure("Calendar for Omarchy could not read its feed list, %s." % config_path()) from None
     feeds = value.get("feeds") if isinstance(value, dict) else None
     out = []
     for feed in feeds if isinstance(feeds, list) else []:
@@ -133,7 +133,7 @@ def save_feeds(feeds):
             os.unlink(temporary)
         except OSError:
             pass
-        raise Failure("OmaCal could not save its feed list to %s." % path) from None
+        raise Failure("Calendar for Omarchy could not save its feed list to %s." % path) from None
 
 
 def feed_id(url):
@@ -169,7 +169,7 @@ def colored(feeds):
 class HttpsOnly(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         if not allowed_url(newurl):
-            raise Failure("A feed redirected away from HTTPS, so OmaCal did not follow it.")
+            raise Failure("A feed redirected away from HTTPS, so Calendar for Omarchy did not follow it.")
         new = super().redirect_request(req, fp, code, msg, headers, newurl)
         # CPython reads a redirect's whole body before following it, with no
         # limit; closed first, that read gets nothing.
@@ -228,7 +228,7 @@ def fetch(feed, fresh_seconds=FRESH_SECONDS):
     cached, meta = read_cached(name)
     if cached is not None and time.time() - float(meta.get("at", 0)) < fresh_seconds:
         return cached
-    headers = {"User-Agent": "OmaCal (+https://github.com/crmne/omacal)", "Accept": "text/calendar, */*;q=0.5"}
+    headers = {"User-Agent": "Calendar for Omarchy (+https://github.com/crmne/omarchy-calendar)", "Accept": "text/calendar, */*;q=0.5"}
     if cached is not None and meta.get("etag"):
         headers["If-None-Match"] = meta["etag"]
     if cached is not None and meta.get("modified"):
@@ -252,7 +252,7 @@ def fetch(feed, fresh_seconds=FRESH_SECONDS):
             return cached
         raise Failure("“%s” could not be reached. Check the connection." % feed["name"]) from None
     if len(body) > FEED_LIMIT:
-        raise Failure("“%s” is larger than OmaCal will read." % feed["name"])
+        raise Failure("“%s” is larger than Calendar for Omarchy will read." % feed["name"])
     if b"BEGIN:VCALENDAR" not in body[:4096].upper():
         raise Failure("“%s” is not a calendar feed." % feed["name"])
     write_cached(name, body, meta)
@@ -313,7 +313,7 @@ def components(text):
             elif kind == "VALARM" and events and "VEVENT" in stack:
                 events[-1]["alarms"].append([])
             if len(events) > EVENT_LIMIT * 5:
-                raise Failure("A feed has more events than OmaCal will read.")
+                raise Failure("A feed has more events than Calendar for Omarchy will read.")
             continue
         if name == "END":
             if stack:
@@ -800,7 +800,7 @@ def expand(text, feed, first_day, last_day):
                 if not override.cancelled:
                     keep(override, override.start, True)
             if len(out) > EVENT_LIMIT:
-                raise Failure("“%s” has more events there than OmaCal will read." % feed["name"])
+                raise Failure("“%s” has more events there than Calendar for Omarchy will read." % feed["name"])
     # Days moved out of a series this feed does not list.
     for uid, moved in overrides.items():
         if uid not in masters:
@@ -854,13 +854,13 @@ def read_weeks(feeds, keys):
 
 def add(request):
     if not isinstance(request, dict):
-        raise Failure("OmaCal could not read that feed.")
+        raise Failure("Calendar for Omarchy could not read that feed.")
     url = normalized_url(request.get("url"))
     feeds = load_feeds()
     if any(feed["url"] == url for feed in feeds):
         raise Failure("That feed is already there.")
     if len(feeds) >= MAX_FEEDS:
-        raise Failure("OmaCal reads up to %d feeds." % MAX_FEEDS)
+        raise Failure("Calendar for Omarchy reads up to %d feeds." % MAX_FEEDS)
     name = str(request.get("name") or "").strip()[:128]
     feed = {"url": url, "name": name or host_of(url), "color": ""}
     body = fetch(dict(feed, id=feed_id(url)), fresh_seconds=0)
@@ -894,7 +894,7 @@ def remove(identifier):
 def emit(lines):
     output = "\n".join(json.dumps(line, separators=(",", ":"), ensure_ascii=False) for line in lines)
     if len(output.encode()) > OUTPUT_LIMIT:
-        raise Failure("The feeds have more there than OmaCal will read.")
+        raise Failure("The feeds have more there than Calendar for Omarchy will read.")
     sys.stdout.write(output + "\n")
 
 
@@ -909,7 +909,7 @@ def main(argv):
             try:
                 request = json.loads(raw)
             except ValueError:
-                raise Failure("OmaCal could not read that feed.") from None
+                raise Failure("Calendar for Omarchy could not read that feed.") from None
             emit([{"ok": True, "message": add(request)}])
             return 0
         if action == "remove":
@@ -930,7 +930,7 @@ def main(argv):
                 raise Failure("No weeks to read.")
             emit(read_weeks(feeds, keys))
         else:
-            raise Failure("OmaCal does not know that feed action.")
+            raise Failure("Calendar for Omarchy does not know that feed action.")
         return 0
     except Failure as error:
         if action == "weeks":
@@ -943,7 +943,7 @@ def main(argv):
         if action == "weeks":
             emit([{"week": key, "error": True} for key in keys])
         else:
-            emit([{"ok": False, "error": "A feed served something OmaCal cannot read."}])
+            emit([{"ok": False, "error": "A feed served something Calendar for Omarchy cannot read."}])
         return 1
 
 

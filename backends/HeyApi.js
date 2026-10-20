@@ -39,7 +39,7 @@ var requestTimeoutMs = 20000
 // Prints the API's base URL (hey-cli's own setting, so HEY_BASE_URL and its
 // config are respected) on the first line, then hey-cli's access token. Run
 // with "refresh" after HEY refused the token: hey-cli renews it first.
-// The token goes from hey-cli's stdout to OmaCal's, never through an
+// The token goes from hey-cli's stdout to Calendar for Omarchy's, never through an
 // argument, a variable that is exported, a file or a log.
 var sessionScript = [
   "if [ \"$1\" = refresh ]; then timeout -k 3 20 hey auth refresh >/dev/null 2>&1; fi",
@@ -63,7 +63,7 @@ function parseSession(output) {
   if (base === "") base = "https://app.hey.com"
   var local = /^http:\/\/(localhost|127\.0\.0\.1|\[::1\]|[A-Za-z0-9.-]+\.localhost)(:\d+)?$/.test(base)
   if (!local && !/^https:\/\/[A-Za-z0-9.-]+(:\d+)?$/.test(base))
-    return { error: "hey-cli's server is not an HTTPS address, so OmaCal will not send your calendar there." }
+    return { error: "hey-cli's server is not an HTTPS address, so Calendar for Omarchy will not send your calendar there." }
   var token = text.substring(newline + 1).replace(/^\s+|\s+$/g, "")
   if (token === "" || !/^[\x21-\x7e]+$/.test(token))
     return { error: "hey-cli did not hand over a HEY sign-in. Run `hey auth login`." }
@@ -281,7 +281,7 @@ function loadZone(state, name, what) {
   return z
 }
 
-// The zone OmaCal's form named, or else the account's (hey-cli's writeZone).
+// The zone Calendar for Omarchy's form named, or else the account's (hey-cli's writeZone).
 function writeZone(state, flags) {
   if (flags.timeZone !== undefined) {
     var z = zone(state, flags.timeZone)
@@ -289,7 +289,7 @@ function writeZone(state, flags) {
     return clockZone(flags.timeZone, z)
   }
   var name = accountZone(state)
-  if (name === "") refuse("Your HEY account has no time zone set, so OmaCal cannot place the times. Set one in HEY.")
+  if (name === "") refuse("Your HEY account has no time zone set, so Calendar for Omarchy cannot place the times. Set one in HEY.")
   return clockZone(name, loadZone(state, name, "Your HEY account"))
 }
 
@@ -376,7 +376,7 @@ function scheduleFrom(state, flags, event) {
     allDay: allDay, startTime: start.clock, endTime: end.clock,
     zone: startZone.name, endZone: endZone.name
   }
-  if (!isDayKey(schedule.startsAt) || !isDayKey(schedule.endsAt)) refuse("OmaCal could not read that event's days. Edit it in HEY.")
+  if (!isDayKey(schedule.startsAt) || !isDayKey(schedule.endsAt)) refuse("Calendar for Omarchy could not read that event's days. Edit it in HEY.")
   if (allDay) {
     if (schedule.endsAt < schedule.startsAt) refuse("It has to end after it starts.")
     return { startsAt: schedule.startsAt, endsAt: schedule.endsAt, allDay: true, startTime: "", endTime: "", zone: "", endZone: "" }
@@ -390,7 +390,7 @@ function scheduleFrom(state, flags, event) {
     if (flags.startTime === undefined) startTime = "09:00"
     if (flags.endTime === undefined) endTime = ""
   }
-  if (!isClock(startTime) || (endTime !== "" && !isClock(endTime))) refuse("OmaCal could not read that event's times. Edit it in HEY.")
+  if (!isClock(startTime) || (endTime !== "" && !isClock(endTime))) refuse("Calendar for Omarchy could not read that event's times. Edit it in HEY.")
   schedule.startTime = startTime
   schedule.endTime = endTime
   if (endTime === "") {
@@ -417,7 +417,7 @@ function scheduleFrom(state, flags, event) {
     keepsItsMoment("end", endsAt, schedule.endsAt, schedule.endTime, endZone)
 
   // An end on another clock, on the start's day, that comes before the
-  // start is the next day's (a red-eye), as OmaCal always read it.
+  // start is the next day's (a red-eye), as Calendar for Omarchy always read it.
   if (flags.endTimeZone !== undefined && flags.endsOn === flags.startsOn
       && placed(endZone, schedule.endsAt, schedule.endTime) <= placed(startZone, schedule.startsAt, schedule.startTime))
     schedule.endsAt = addDays(schedule.endsAt, 1)
@@ -470,7 +470,7 @@ function countdownForInterval(seconds) {
 // { value, unit } from the countdown recording, or a refusal: a countdown
 // the write does not name is a countdown removed.
 function countdownFromRecording(state, countdown, event) {
-  var unreadable = "OmaCal could not read back the event's countdown, and saving would remove it. Edit it in HEY."
+  var unreadable = "Calendar for Omarchy could not read back the event's countdown, and saving would remove it. Edit it in HEY."
   var match = /^(\d+) (day|week|month)s? before$/.exec(text(countdown.label))
   if (!match) refuse(unreadable)
   var starts = instant(countdown.starts_at)
@@ -604,7 +604,7 @@ function planCreate(state, request) {
   var reminders = []
   if (r.remind) {
     var seconds = noticeSeconds(r.remind)
-    if (seconds === 0) refuse("OmaCal does not know that reminder.")
+    if (seconds === 0) refuse("Calendar for Omarchy does not know that reminder.")
     reminders.push(seconds)
   }
 
@@ -661,7 +661,7 @@ function planCreate(state, request) {
 // ---------------------------------------------------------------------------
 
 // What an edit writes to: an event by its id, or one day of a series.
-// Mirrors how OmaCal always named it to hey-cli.
+// Mirrors how Calendar for Omarchy always named it to hey-cli.
 function editTarget(request) {
   var r = request || {}
   var event = r.event || {}
@@ -681,7 +681,7 @@ function editTarget(request) {
   return (parent || id) ? { id: parent || id } : null
 }
 
-// Calendar.editRequest's changes as the flags OmaCal would have given
+// Calendar.editRequest's changes as the flags Calendar for Omarchy would have given
 // hey-cli: only what changed.
 function editFlags(changes) {
   var c = changes || {}
@@ -691,7 +691,7 @@ function editFlags(changes) {
   if (c.calendarId) flags.calendarId = String(Math.round(Number(c.calendarId)))
   if (c.remind) {
     var seconds = noticeSeconds(c.remind)
-    if (seconds === 0) refuse("OmaCal does not know that reminder.")
+    if (seconds === 0) refuse("Calendar for Omarchy does not know that reminder.")
     flags.reminders = [seconds]
   }
   var s = c.schedule
@@ -750,7 +750,7 @@ function allCalendarIds(state, first) {
 }
 
 // hey-cli's findEvent: a year either side of today, calendar by calendar,
-// stopping at the one it is on. The calendar OmaCal saw it on is read
+// stopping at the one it is on. The calendar Calendar for Omarchy saw it on is read
 // first; it is matched by id, so the order changes nothing but the cost.
 function findEvent(state, id, calendarHint, dateHint) {
   var today = isDayKey(state.today) ? state.today : new Date().toISOString().substring(0, 10)
@@ -795,7 +795,7 @@ function virtualOccurrence(state, series, date) {
   copy.occurrence_id = idOf(series.id) + "_" + date
   var starts = instant(series.starts_at)
   var ends = instant(series.ends_at)
-  if (starts === null || ends === null) refuse("OmaCal could not read that series' times. Edit it in HEY.")
+  if (starts === null || ends === null) refuse("Calendar for Omarchy could not read that series' times. Edit it in HEY.")
   var duration = ends - starts
   var start
   if (series.all_day) {
@@ -916,7 +916,7 @@ function step(job, state) {
       plan = planCreate(state, job.request)
     } else if (job.kind === "edit") {
       var target = editTarget(job.request)
-      if (target === null) return { error: "OmaCal cannot name that event to HEY. Edit it there." }
+      if (target === null) return { error: "Calendar for Omarchy cannot name that event to HEY. Edit it there." }
       var flags = editFlags(job.request.changes)
       var event = job.request.event || {}
       var hint = idOf(event.calendarId)
@@ -926,7 +926,7 @@ function step(job, state) {
     } else if (job.kind === "renameTrack") {
       plan = planRenameTrack(job.id, job.name)
     } else {
-      return { error: "OmaCal does not know that change." }
+      return { error: "Calendar for Omarchy does not know that change." }
     }
     return { write: request(plan) }
   } catch (e) {
@@ -984,12 +984,12 @@ function answer(status, body, link) {
 
 function failure(status, json, during) {
   if (status === 0) return "Could not reach HEY. Check the connection and try again."
-  if (status === 401) return "HEY did not accept OmaCal's sign-in. Run `hey auth login`."
+  if (status === 401) return "HEY did not accept Calendar for Omarchy's sign-in. Run `hey auth login`."
   if (status === 403) return "HEY does not let you change that event."
   if (status === 404) return during === "read"
-    ? "HEY could not find what OmaCal asked for. Refresh and try again."
+    ? "HEY could not find what Calendar for Omarchy asked for. Refresh and try again."
     : "HEY no longer has that event, or does not let you change it. Refresh and try again."
-  if (status === 429) return "HEY asked OmaCal to slow down. Try again in a minute."
+  if (status === 429) return "HEY asked Calendar for Omarchy to slow down. Try again in a minute."
   var message = json && typeof json === "object" ? text(json.error || json.message) : ""
   if (message !== "" && message.length < 300) return "HEY did not accept that: " + message
   return status >= 500 ? "HEY had a problem (HTTP " + status + "). Try again in a moment."

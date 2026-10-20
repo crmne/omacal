@@ -5,7 +5,7 @@ import qs.Commons
 import qs.Ui
 import "Model.js" as Model
 import "Calendar.js" as Cal
-// The calendar services OmaCal reads, each a Source: HEY, Google, and the
+// The calendar services Calendar for Omarchy reads, each a Source: HEY, Google, and the
 // calendar feeds. Time tracking is HEY's own, so it is read from HEY.
 import "backends/Hey.js" as Hey
 import "backends/Google.js" as Google
@@ -428,7 +428,7 @@ BarWidget {
   // what it holds now; only the difference is sent.
   function editEvent(event, before, form) {
     var source = sourceOf(event)
-    if (!source || !source.ready) return refuseWrite("OmaCal is not reading that event's calendar right now.")
+    if (!source || !source.ready) return refuseWrite("Calendar for Omarchy is not reading that event's calendar right now.")
     var checked = Cal.editRequest(event, before, form, form.scope, true,
       { service: source.name, clearsReminders: source.capabilities.clearsReminders === true })
     if (checked.error) return refuseWrite(checked.error)
@@ -442,7 +442,7 @@ BarWidget {
     if (from.length > 0 && from[0] !== form.date) invalidateDay(from[0], source)
     if (source === heySource) {
       if (Api.editTarget(checked.request) === null)
-        return refuseWrite("OmaCal cannot name that event to " + source.name + ". Edit it there.")
+        return refuseWrite("Calendar for Omarchy cannot name that event to " + source.name + ". Edit it there.")
       return beginWrite(form.date, source, function() { return writer.heyEdit(checked.request) })
     }
     var write = source.backend.writeCommand("edit", checked.request, root.sourceContext)

@@ -67,7 +67,7 @@ test('Google deletes only one-off events it lets you change', () => {
   assert.ok(!Google.canDelete({ seriesId: '', calendarId: 'a' }))
 })
 
-test("Google's day page opens as the account OmaCal reads", () => {
+test("Google's day page opens as the account Calendar for Omarchy reads", () => {
   assert.equal(Google.dayUrl('2026-10-19', 'me@example.com'), 'https://calendar.google.com/calendar/r/day/2026/10/19?authuser=me%40example.com')
   assert.equal(Google.dayUrl('bad', ''), 'https://calendar.google.com/calendar/r')
 })

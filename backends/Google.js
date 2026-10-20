@@ -1,4 +1,4 @@
-// The Google Calendar backend: what OmaCal runs to read and write Google
+// The Google Calendar backend: what Calendar for Omarchy runs to read and write Google
 // calendars. The work is done by backends/google.py, which signs in with
 // gws, the Google Workspace CLI (https://github.com/googleworkspace/cli),
 // and talks to Google's Calendar API over HTTPS. Its arguments are an
@@ -116,7 +116,7 @@ function writeResult(exitCode, output) {
   return { ok: false, message: "Google did not confirm the change. Refresh before trying again." }
 }
 
-// Google's web app on that day, as the account OmaCal reads.
+// Google's web app on that day, as the account Calendar for Omarchy reads.
 function dayUrl(dayKey, account) {
   var who = account ? "?authuser=" + encodeURIComponent(String(account)) : ""
   return isDayKey(dayKey)

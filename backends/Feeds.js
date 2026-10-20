@@ -121,7 +121,7 @@ function writeResult(exitCode, output) {
   if (exitCode === 0 && answer && answer.ok === true) return { ok: true, message: String(answer.message || "") }
   if (answer && answer.error) return { ok: false, message: String(answer.error).substr(0, 300) }
   if (exitCode === 124) return { ok: false, message: "The feed took too long to answer." }
-  return { ok: false, message: "OmaCal could not change the feeds (exit " + exitCode + ")." }
+  return { ok: false, message: "Calendar for Omarchy could not change the feeds (exit " + exitCode + ")." }
 }
 
 function dayUrl() {

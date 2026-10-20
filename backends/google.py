@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""OmaCal's Google Calendar helper (backends/Google.js runs it).
+"""Calendar for Omarchy's Google Calendar helper (backends/Google.js runs it).
 
-Reads Google calendars and events and prints them in OmaCal's standard
+Reads Google calendars and events and prints them in Calendar for Omarchy's standard
 shapes (see "Backends" at the top of Calendar.js); creates, edits and
 deletes events. Signing in is gws's, the Google Workspace CLI: its saved
 sign-in comes from `gws auth export --unmasked` over a pipe, is turned into
@@ -162,15 +162,15 @@ class Google:
         except (urllib.error.URLError, OSError):
             raise Failure("Could not reach Google. Check the connection.") from None
         if len(raw) > RESPONSE_LIMIT:
-            raise Failure("Google answered with more than OmaCal will read.")
+            raise Failure("Google answered with more than Calendar for Omarchy will read.")
         if not raw.strip():
             return {}
         try:
             value = json.loads(raw)
         except ValueError:
-            raise Failure("Google answered with something OmaCal cannot read.") from None
+            raise Failure("Google answered with something Calendar for Omarchy cannot read.") from None
         if not isinstance(value, dict):
-            raise Failure("Google answered with something OmaCal cannot read.")
+            raise Failure("Google answered with something Calendar for Omarchy cannot read.")
         return value
 
     def pages(self, path, params, limit):
@@ -181,10 +181,10 @@ class Google:
             page = self.call("GET", path, params)
             listed = page.get("items", [])
             if not isinstance(listed, list):
-                raise Failure("Google answered with something OmaCal cannot read.")
+                raise Failure("Google answered with something Calendar for Omarchy cannot read.")
             items.extend(item for item in listed if isinstance(item, dict))
             if len(items) > limit:
-                raise Failure("Google has more there than OmaCal will read.")
+                raise Failure("Google has more there than Calendar for Omarchy will read.")
             token = page.get("nextPageToken")
             if not token:
                 return items
@@ -209,7 +209,7 @@ def failure(error):
     if code == 403 and reason in ("insufficientPermissions", "ACCESS_TOKEN_SCOPE_INSUFFICIENT"):
         return "gws's Google sign-in has no Calendar access. " + SIGN_IN
     if code == 403 and reason in ("rateLimitExceeded", "userRateLimitExceeded", "quotaExceeded"):
-        return "Google asked OmaCal to slow down. Try again in a minute."
+        return "Google asked Calendar for Omarchy to slow down. Try again in a minute."
     if code == 403:
         return "Google does not let you change that event."
     if code == 404:
@@ -219,7 +219,7 @@ def failure(error):
     if code == 412:
         return "The event changed in Google meanwhile. Refresh and try again."
     if code == 429:
-        return "Google asked OmaCal to slow down. Try again in a minute."
+        return "Google asked Calendar for Omarchy to slow down. Try again in a minute."
     if code >= 500:
         return "Google had a problem (HTTP %d). Try again in a moment." % code
     return "Google did not accept that (HTTP %d)." % code
@@ -327,7 +327,7 @@ def event_bounds(event):
 
 
 def project_event(event, calendar, palette):
-    """One Google event in OmaCal's standard shape, or None to leave it out."""
+    """One Google event in Calendar for Omarchy's standard shape, or None to leave it out."""
     if event.get("status") == "cancelled" or event.get("eventType") == "workingLocation":
         return None
     start, end = event.get("start") or {}, event.get("end") or {}
@@ -414,7 +414,7 @@ def read_weeks(google, keys):
                     weeks[key].append(event)
                     count += 1
             if count > EVENT_LIMIT * 2:
-                raise Failure("Google has more events there than OmaCal will read.")
+                raise Failure("Google has more events there than Calendar for Omarchy will read.")
     return [{"week": key, "events": weeks[key]} for key in keys]
 
 
@@ -443,7 +443,7 @@ def google_time(moment, tz_name):
 
 
 def schedule_body(s, date, end_date):
-    """Google's start and end for OmaCal's schedule, on these days."""
+    """Google's start and end for Calendar for Omarchy's schedule, on these days."""
     if s.get("allDay"):
         last = max(dt.date.fromisoformat(end_date), dt.date.fromisoformat(date))
         return ({"date": date, "dateTime": None, "timeZone": None},
@@ -548,7 +548,7 @@ def edit(google, r):
     series_id = text(event.get("parentId"), 512) or own_id
     target = own_id if (one or not recurring) else series_id
     if not calendar_id or not target:
-        raise Failure("OmaCal cannot name that event to Google. Edit it there.")
+        raise Failure("Calendar for Omarchy cannot name that event to Google. Edit it there.")
     calendar = target_calendar(google, calendar_id)
     path = "/calendars/%s/events/%s" % (quoted(calendar["id"]), quoted(target))
     current = google.call("GET", path)
@@ -596,7 +596,7 @@ def delete(google, r):
     event = r.get("event") or {}
     calendar_id, event_id = text(event.get("calendarId"), 512), text(event.get("seriesId"), 512)
     if not calendar_id or not event_id:
-        raise Failure("OmaCal cannot name that event to Google. Delete it there.")
+        raise Failure("Calendar for Omarchy cannot name that event to Google. Delete it there.")
     calendar = target_calendar(google, calendar_id)
     path = "/calendars/%s/events/%s" % (quoted(calendar["id"]), quoted(event_id))
     # Checked against Google, not against the copy on screen.
@@ -613,7 +613,7 @@ def delete(google, r):
 
 def write(google, request):
     if not isinstance(request, dict):
-        raise Failure("OmaCal could not work out that change.")
+        raise Failure("Calendar for Omarchy could not work out that change.")
     kind = request.get("kind")
     if kind == "create":
         return create(google, request.get("request") or {})
@@ -621,7 +621,7 @@ def write(google, request):
         return edit(google, request.get("request") or {})
     if kind == "delete":
         return delete(google, request.get("request") or {})
-    raise Failure("OmaCal does not know that change.")
+    raise Failure("Calendar for Omarchy does not know that change.")
 
 
 def read_request():
@@ -631,7 +631,7 @@ def read_request():
     try:
         return json.loads(raw)
     except ValueError:
-        raise Failure("OmaCal could not work out that change.") from None
+        raise Failure("Calendar for Omarchy could not work out that change.") from None
 
 
 # ---------------------------------------------------------------------------
@@ -639,7 +639,7 @@ def read_request():
 def emit(lines):
     output = "\n".join(json.dumps(line, separators=(",", ":"), ensure_ascii=False) for line in lines)
     if len(output.encode()) > OUTPUT_LIMIT:
-        raise Failure("Google has more there than OmaCal will read.")
+        raise Failure("Google has more there than Calendar for Omarchy will read.")
     sys.stdout.write(output + "\n")
 
 
@@ -648,7 +648,7 @@ def main(argv):
     keys = week_keys(argv[2:]) if action == "weeks" else []
     try:
         if action not in ("probe", "calendars", "weeks", "write"):
-            raise Failure("OmaCal does not know that Google action.")
+            raise Failure("Calendar for Omarchy does not know that Google action.")
         request = read_request() if action == "write" else None
         google = Google()
         if action == "probe":
@@ -675,7 +675,7 @@ def main(argv):
         if action == "weeks":
             emit([{"week": key, "error": True} for key in keys])
         else:
-            emit([{"ok": False, "error": "Google answered with something OmaCal cannot read."}])
+            emit([{"ok": False, "error": "Google answered with something Calendar for Omarchy cannot read."}])
         return 1
 
 

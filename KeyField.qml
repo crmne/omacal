@@ -13,7 +13,7 @@ import "KeyEdit.js" as Edit
 // at most.
 //
 // It draws its own text and caret, and keeps the kit TextField's look and
-// the parts of its API OmaCal uses: text, placeholderText, password,
+// the parts of its API Calendar for Omarchy uses: text, placeholderText, password,
 // selectAll(), accepted and editingFinished. Keys: typing, Left/Right
 // (Ctrl: a word), Home/End, Backspace/Delete (Ctrl+Backspace or Ctrl+W: a
 // word), Ctrl+A all, Ctrl+U clear, Enter accepts. Input methods are not

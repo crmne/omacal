@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Renders the README and release screenshots from tools/preview/shell.qml:
-# OmaCal's real panel, quick-add form, settings and bar label, with a made-up
+# Calendar for Omarchy's real panel, quick-add form, settings and bar label, with a made-up
 # calendar. Nothing reads or writes a real calendar. Needs a running Wayland
 # session, since the panel is a layer-shell surface; the windows it opens are
 # on screen for a few seconds. Omarchy sizes its UI for the focused monitor,

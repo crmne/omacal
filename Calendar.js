@@ -1,4 +1,4 @@
-// OmaCal's calendar model: every piece of date, event and bar math, and
+// Calendar for Omarchy's calendar model: every piece of date, event and bar math, and
 // nothing about any one calendar service.
 //
 // Model.js is Omarchy's own clock model and stays byte-for-byte stock, so a
@@ -84,7 +84,7 @@ function calendarKey(source, id) {
 }
 
 // "hey:7" as { source: "hey", id: "7" }. A bare number is a HEY calendar,
-// as OmaCal stored the last one used before there was more than HEY.
+// as Calendar for Omarchy stored the last one used before there was more than HEY.
 function splitCalendarKey(key) {
   var text = String(key === undefined || key === null ? "" : key)
   if (/^[1-9]\d*$/.test(text)) return { source: "hey", id: text }
@@ -1150,7 +1150,7 @@ var notifyScript = [
   "        '/org/freedesktop/Notifications', None, Gio.DBusSignalFlags.NONE, answered, None)",
   "    sent[0] = bus.call_sync('org.freedesktop.Notifications', '/org/freedesktop/Notifications',",
   "        'org.freedesktop.Notifications', 'Notify',",
-  "        GLib.Variant('(susssasa{sv}i)', ('OmaCal', 0, icon, env['TITLE'], env['BODY'], ['default', 'Open'], {}, -1)),",
+  "        GLib.Variant('(susssasa{sv}i)', ('Calendar for Omarchy', 0, icon, env['TITLE'], env['BODY'], ['default', 'Open'], {}, -1)),",
   "        GLib.VariantType('(u)'), Gio.DBusCallFlags.NONE, -1, None).unpack()[0]",
   "except GLib.Error:",
   "    sys.exit(0)",
@@ -1576,7 +1576,7 @@ function editRequest(event, before, after, scope, occurrencesSupported, options)
   var checked = validateEvent(after)
   if (checked.error) return checked
   var opened = validateEvent(before)
-  if (opened.error) return { error: "OmaCal could not read that event's times. Edit it in " + service + "." }
+  if (opened.error) return { error: "Calendar for Omarchy could not read that event's times. Edit it in " + service + "." }
   var was = opened.request
   var now = checked.request
   var changes = {}
@@ -1584,7 +1584,7 @@ function editRequest(event, before, after, scope, occurrencesSupported, options)
   if (now.title !== was.title) changes.title = now.title
   if (now.location !== was.location) changes.location = now.location
   if (now.source !== was.source && now.source !== "" && was.source !== "")
-    return { error: "OmaCal moves an event only between calendars of one service." }
+    return { error: "Calendar for Omarchy moves an event only between calendars of one service." }
   if (now.calendarId && String(now.calendarId) !== "0" && String(now.calendarId) !== String(was.calendarId))
     changes.calendarId = now.calendarId
 
@@ -1592,7 +1592,7 @@ function editRequest(event, before, after, scope, occurrencesSupported, options)
   if (remind !== String(before.remind || "") && remind !== "keep") {
     // hey-cli sends back what an edit does not name, and has no way to say
     // "none": an event keeps at least the reminders it has.
-    if (remind === "" && !o.clearsReminders) return { error: "OmaCal cannot remove reminders yet. Turn them off in HEY." }
+    if (remind === "" && !o.clearsReminders) return { error: "Calendar for Omarchy cannot remove reminders yet. Turn them off in HEY." }
     changes.remind = remind
   }
 

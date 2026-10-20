@@ -2,7 +2,7 @@ import QtQuick
 import Quickshell.Io
 import "Calendar.js" as Cal
 
-// One calendar service OmaCal reads: HEY, Google, or the calendar feeds.
+// One calendar service Calendar for Omarchy reads: HEY, Google, or the calendar feeds.
 // It asks its backend (backends/*.js) whether it can run, reads the weeks
 // it is asked for, keeps them by their Monday, lists the calendars, and
 // follows the service's changes when it can stream them. BarWidget.qml

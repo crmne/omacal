@@ -1,4 +1,4 @@
-// The HEY backend: what OmaCal runs to read and write a HEY calendar
+// The HEY backend: what Calendar for Omarchy runs to read and write a HEY calendar
 // through the HEY CLI (https://github.com/basecamp/hey-cli). The writes that
 // carry what you typed (an event's title and place, a track's name) go to
 // HEY's API instead, with the token hey-cli hands over (HeyApi.js), so none
@@ -94,7 +94,7 @@ function probe(output) {
   if (version === null) return { mode: "week", version: "", error: "" }
   if (compareVersions(version, minimumCliVersion) < 0)
     return { mode: "", version: formatVersion(version),
-      error: "hey-cli " + formatVersion(version) + " is too old. OmaCal needs " + formatVersion(minimumCliVersion) + " or newer." }
+      error: "hey-cli " + formatVersion(version) + " is too old. Calendar for Omarchy needs " + formatVersion(minimumCliVersion) + " or newer." }
   return { mode: compareVersions(version, weekViewCliVersion) < 0 ? "list" : "week", version: formatVersion(version), error: "" }
 }
 

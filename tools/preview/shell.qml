@@ -1,4 +1,4 @@
-// Renders OmaCal's real panel, quick-add form and settings with a made-up
+// Renders Calendar for Omarchy's real panel, quick-add form and settings with a made-up
 // calendar, for the README and release screenshots. No backend runs: a
 // stand-in host serves fictional events, so no account is read and nothing
 // is written. Run through tools/render-screenshots.

@@ -1,10 +1,14 @@
-# OmaCal
+# Calendar for Omarchy
 
 Omarchy's stock clock and calendar, exactly as it ships, with your calendars
 laid over it: [HEY](https://hey.com), Google Calendar, and any calendar
 published as an `.ics` feed, side by side (see [Calendars](#calendars)).
 
-![OmaCal's panel: the month grid with per-calendar chips, and the selected day](screenshots/panel.png)
+Calendar for Omarchy was called OmaCal until 1.2.1. It was renamed so it is
+not mistaken for [x3me's OmaCal app](https://omacal.app). Installs keep
+updating as before: the plugin id is still `crmne.omacal`.
+
+![Calendar for Omarchy's panel: the month grid with per-calendar chips, and the selected day](screenshots/panel.png)
 
 - **Chips under every day.** One chip per calendar color, with the number of
   that day's events in it. A day with a Work meeting and a dinner shows a
@@ -129,8 +133,9 @@ Google calendar itself by switching on Google.
 
 ### Google Calendar
 
-OmaCal signs in to Google through [gws](https://github.com/googleworkspace/cli),
-Google's Workspace CLI, so OmaCal stores no Google credentials:
+Calendar for Omarchy signs in to Google through
+[gws](https://github.com/googleworkspace/cli), Google's Workspace CLI, so
+Calendar for Omarchy stores no Google credentials:
 
 ```bash
 sudo pacman -S googleworkspace-cli   # gws, from Arch's extra repository
@@ -148,8 +153,8 @@ to, and shows that account under the switch.
   calendar, for one day of a repeating event or the whole series. Reminders
   can be removed.
 - An event with guests opens in Google Calendar to be changed or deleted,
-  because Google Calendar asks whether to email them and OmaCal does not
-  decide that for you; its reminder can still be changed here. An
+  because Google Calendar asks whether to email them and Calendar for Omarchy
+  does not decide that for you; its reminder can still be changed here. An
   invitation you are a guest on opens in Google Calendar.
 - Deleting works for one-off events, as with HEY.
 - Join links come from Google Meet and other conferencing (Zoom, Teams),
@@ -170,9 +175,9 @@ read only.
   calendar*, and copy the ICS link.
 - Holidays, sports fixtures and anything else served as `.ics`.
 
-Repeating events are unrolled by OmaCal: daily, weekly, monthly and yearly
-rules, with their days, counts, end dates, removed days and single days
-moved or cancelled, in the time zone each event names (Windows zone names
+Repeating events are unrolled by Calendar for Omarchy: daily, weekly, monthly
+and yearly rules, with their days, counts, end dates, removed days and single
+days moved or cancelled, in the time zone each event names (Windows zone names
 too, as Outlook writes them).
 
 ## Install
@@ -181,13 +186,13 @@ Review the source first: Omarchy plugins run as unsandboxed code inside the
 shell.
 
 ```bash
-omarchy plugin add https://github.com/crmne/omacal.git --enable
+omarchy plugin add https://github.com/crmne/omarchy-calendar.git --enable
 omarchy plugin disable omarchy.clock
 ```
 
-OmaCal replaces the stock clock, so the second line takes that one off the
-bar. Point the bar's center anchor at OmaCal so the center section stays put
-when hover-only widgets appear:
+Calendar for Omarchy replaces the stock clock, so the second line takes that
+one off the bar. Point the bar's center anchor at Calendar for Omarchy so the
+center section stays put when hover-only widgets appear:
 
 ```jsonc
 // ~/.config/omarchy/shell.json
@@ -279,7 +284,7 @@ where the focus is.
 | `Alt+↑` `Alt+↓` | Switch reminder, from any field |
 | `Alt+A` | Toggle all day, from any field |
 | `Alt+Z` | Show the time zones under the times, or hide them and go back to local time |
-| `Ctrl+V` / `Shift+Insert` | Paste. OmaCal's text fields read the clipboard only then, never on their own |
+| `Ctrl+V` / `Shift+Insert` | Paste. Calendar for Omarchy's text fields read the clipboard only then, never on their own |
 | `↑` `↓` in Where? | Pick one of the suggested places |
 | `Enter` | Take the picked place; otherwise add the event, or save the changes |
 | `Esc` | Put the place suggestions away; otherwise cancel |
@@ -343,15 +348,15 @@ machine's clock, and saving new times writes them in the zones the form
 shows.
 
 Google Calendar is polled rather than followed live: Google pushes changes
-only to a public web address. Event colours are Google's, but OmaCal does
-not change them. An event with guests is changed in Google Calendar. Feeds
-are read only, and repeat rules by hour or minute show only their first
-occurrence.
+only to a public web address. Event colours are Google's, but Calendar for
+Omarchy does not change them. An event with guests is changed in Google
+Calendar. Feeds are read only, and repeat rules by hour or minute show only
+their first occurrence.
 
 HEY returns event notes as plain text. Editing an event preserves that text
 but loses its original formatting. Use HEY to edit an event whose note
 formatting must stay intact. If a countdown or an ambiguous stored time
-cannot be carried forward safely, OmaCal asks you to edit in HEY.
+cannot be carried forward safely, Calendar for Omarchy asks you to edit in HEY.
 
 The text fields support typing, keyboard selection and explicit paste,
 but do not yet support compose/dead keys, IME input or mouse selection.
@@ -377,7 +382,7 @@ calendar is known everywhere by its key, `source:id`. Writes go through
 and hand it what you typed on stdin. CalDAV (Fastmail, iCloud, Nextcloud)
 is the natural next one. The first Google backend was written by
 [David Paluy](https://github.com/dpaluy) in
-[#2](https://github.com/crmne/omacal/pull/2).
+[#2](https://github.com/crmne/omarchy-calendar/pull/2).
 
 ## Develop
 
@@ -403,5 +408,5 @@ backends' Python helpers under the system Python.
 [MIT](LICENSE). Portions are Omarchy's own clock plugin, also MIT; see
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
-OmaCal is an independent project, not created by, affiliated with, or
-supported by HEY or 37signals.
+Calendar for Omarchy is an independent project, not created by, affiliated
+with, or supported by HEY or 37signals.

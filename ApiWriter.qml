@@ -101,7 +101,7 @@ Item {
     try {
       next = Api.step(root.job, root.progress)
     } catch (e) {
-      done(false, "OmaCal could not work out that change. Make it in HEY.")
+      done(false, "Calendar for Omarchy could not work out that change. Make it in HEY.")
       return
     }
     if (next.error) {
@@ -126,7 +126,7 @@ Item {
         done(result.ok, result.message)
       })
     } else {
-      done(false, "OmaCal could not work out that change. Make it in HEY.")
+      done(false, "Calendar for Omarchy could not work out that change. Make it in HEY.")
     }
   }
 
@@ -158,7 +158,7 @@ Item {
       if (epoch !== root.generation) return
       if (request.readyState === XMLHttpRequest.LOADING
           && String(request.responseText).length > Api.responseByteLimit) {
-        done(false, "HEY answered with more than OmaCal will read.")
+        done(false, "HEY answered with more than Calendar for Omarchy will read.")
         return
       }
       if (request.readyState !== XMLHttpRequest.DONE) return
